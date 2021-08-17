@@ -1,9 +1,13 @@
-[submodule "external/ponca"]
-	path = external/ponca
-	url = https://github.com/poncateam/ponca.git
 [submodule "external/polyscope"]
 	path = external/polyscope
 	url = https://github.com/nmwsharp/polyscope.git
+[submodule "external/geometry-central"]
+	path = external/geometry-central
+	url = https://github.com/nmwsharp/geometry-central.git
+	branch = v1
 [submodule "external/libigl"]
 	path = external/libigl
 	url = https://github.com/libigl/libigl.git
+[submodule "external/ponca"]
+	path = external/ponca
+	url = https://github.com/poncateam/ponca.git
