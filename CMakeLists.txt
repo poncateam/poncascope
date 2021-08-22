@@ -1,9 +1,7 @@
-cmake_minimum_required(VERSION 3.0.0)
+cmake_minimum_required(VERSION 3.11)
 
 project("Poncascope")
 
-set(CMAKE_CXX_STANDARD 11)
-set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Maybe stop from CMAKEing in the wrong place
 if (CMAKE_BINARY_DIR STREQUAL CMAKE_SOURCE_DIR)
@@ -18,12 +16,17 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 ### Compiler options
 set( CMAKE_EXPORT_COMPILE_COMMANDS 1 ) # Emit a compile flags file to support completion engines
 
-# Need to force getting Eigen3 package, so both Ponca and polyscope use the same version
-find_package(Eigen3 REQUIRED)
+# Add ponca
+message("\n\n == CMAKE recursively building Ponca\n")
+add_subdirectory("external/ponca")
 
 # Add polyscope
 message("\n\n == CMAKE recursively building Polyscope\n")
 add_subdirectory("external/polyscope")
+
+# Add geometry-central
+message("\n\n == CMAKE recursively building geometry-central\n")
+add_subdirectory("external/geometry-central")
 
 # Move assets to binary folder
 add_custom_target( poncascope-copyassets
@@ -35,12 +38,9 @@ add_executable( poncascope
                 src/main.cpp
                 )
 
+
+
 add_dependencies( poncascope poncascope-copyassets)
 
-# Include settings
-target_include_directories(poncascope PUBLIC
-                            "${CMAKE_CURRENT_SOURCE_DIR}/external/libigl/include"
-                            "${CMAKE_CURRENT_SOURCE_DIR}/external/ponca/")
-
 # Link settings
-target_link_libraries(poncascope polyscope Eigen3::Eigen)
+target_link_libraries(poncascope polyscope Ponca::Fitting geometry-central)
