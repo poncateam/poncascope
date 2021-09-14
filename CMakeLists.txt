@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.0.0)
 
 project("Poncascope")
 
-set(CMAKE_CXX_STANDARD 11)
+set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 # Maybe stop from CMAKEing in the wrong place
@@ -25,6 +25,13 @@ find_package(Eigen3 REQUIRED)
 message("\n\n == CMAKE recursively building Polyscope\n")
 add_subdirectory("external/polyscope")
 
+# Add ponca
+message("\n\n == CMAKE add Ponca\n")
+set( PONCA_CONFIGURE_EXAMPLES CACHE BOOL OFF)
+set( PONCA_CONFIGURE_TESTS    CACHE BOOL OFF)
+set( PONCA_CONFIGURE_DOC      CACHE BOOL OFF)
+add_subdirectory("external/ponca")
+
 # Move assets to binary folder
 add_custom_target( poncascope-copyassets
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets/" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets"
@@ -32,6 +39,7 @@ add_custom_target( poncascope-copyassets
 
 # Create an executable
 add_executable( poncascope
+                src/poncaAdapters.hpp
                 src/main.cpp
                 )
 
