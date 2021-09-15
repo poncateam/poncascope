@@ -5,50 +5,80 @@
 #include "polyscope/messages.h"
 #include "polyscope/point_cloud.h"
 
+#include <Ponca/Fitting>
+#include <Ponca/SpatialPartitioning>
+#include "poncaAdapters.hpp"
+
 #include <iostream>
 #include <utility>
 
-// The mesh, Eigen representation
-Eigen::MatrixXd meshV;
+// Types definition
+using Scalar             = double;
+using PPAdapter          = BlockPointAdapter<Scalar>;
+using KdTree             = Ponca::KdTree<PPAdapter>;
+using WeightConstantFunc = Ponca::DistWeightFunc<PPAdapter, Ponca::ConstantWeightKernel<Scalar> >;
+using PlaneFit           = Ponca::Basket<PPAdapter, WeightConstantFunc, Ponca::CovariancePlaneFit>;
+
+
+// Variables
+Eigen::MatrixXd cloudV;
+KdTree tree;
+polyscope::PointCloud* cloud = nullptr;
 
 // Options for algorithms
-int iVertexSource = 7;
+int iVertexSource  = 7;
+int kNN            = 10;
+Scalar pointRadius = 0.02;
 
-void addCurvatureScalar() {
-    std::cerr << "Not implemented yet" << std::endl;
+// Colorize neighbors of point iVertexSource
+void computeKnnFrom() {
+    int nvert = tree.index_data().size();
+    Eigen::VectorXd closest ( nvert );
+    closest.setZero();
+
+    closest(iVertexSource) = 2;
+    for (int j : tree.k_nearest_neighbors(iVertexSource, kNN)){
+        closest(j) = 1;
+    }
+    cloud->addScalarQuantity(  std::to_string(kNN) + "-neighborhood of vertex " + std::to_string(iVertexSource), closest);
 }
 
-void computeDistanceFrom() {
-    std::cerr << "Not implemented yet" << std::endl;
-}
+// Fit plane on all vertices
+void fitPlane() {
 
-void computeNormals() {
-    std::cerr << "Not implemented yet" << std::endl;
+    int nvert = tree.index_data().size();
+    Eigen::MatrixXd meshN( nvert, 3 );
+    Eigen::VectorXd surfvar ( nvert );
+
+#pragma omp parallel for
+    for( int i = 0; i != nvert; ++i ){
+        PlaneFit fit;
+        auto n = meshN.row( i );
+        fit.init( tree.point_data()[i].pos() );
+
+        for (int j : tree.k_nearest_neighbors(i, kNN))
+            fit.addNeighbor( tree.point_data()[j] );
+        fit.finalize();
+
+        n = fit.primitiveGradient();
+        surfvar(i) = fit.surfaceVariation();
+    }
+    cloud->addVectorQuantity("PlaneFit - Normals", meshN)->setVectorLengthScale(Scalar(2)*pointRadius);
+    cloud->addScalarQuantity( "PlaneFit - Surface Variation", surfvar );
 }
 
 void callback() {
 
-    static int numPoints = 2000;
-    static float param = 3.14;
-
     ImGui::PushItemWidth(100);
 
-    // Curvature
-    if (ImGui::Button("add curvature")) {
-        addCurvatureScalar();
-    }
-
-    // Normals
-    if (ImGui::Button("add normals")) {
-        computeNormals();
-    }
-
-    // Geodesics
-    if (ImGui::Button("compute distance")) {
-        computeDistanceFrom();
-    }
+    if (ImGui::Button("fit plane")) fitPlane();
     ImGui::SameLine();
+    if (ImGui::Button("show knn"))  computeKnnFrom();
+
+    ImGui::Separator();
+
     ImGui::InputInt("source vertex", &iVertexSource);
+    ImGui::InputInt("neighborhood size", &kNN);
 
     ImGui::PopItemWidth();
 }
@@ -67,10 +97,14 @@ int main(int argc, char **argv) {
 
     // Read the point cloud
     Eigen::MatrixXi meshF;
-    igl::readOBJ(filename, meshV, meshF);
+    igl::readOBJ(filename, cloudV, meshF);
 
-    // Register the mesh with Polyscope
-    polyscope::registerPointCloud("input mesh", meshV);
+    // Build Ponca KdTree
+    buildKdTree( cloudV, tree );
+
+    // Register the point cloud with Polyscope
+    cloud = polyscope::registerPointCloud("cloud", cloudV);
+    cloud->setPointRadius(pointRadius);
 
     // Add the callback
     polyscope::state::userCallback = callback;
