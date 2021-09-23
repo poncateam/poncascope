@@ -37,6 +37,14 @@ add_custom_target( poncascope-copyassets
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets/" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets"
         COMMENT "Install assets to binary folder")
 
+# Find OpenMP
+find_package(OpenMP)
+set(OpenMP_link_libraries )
+if(OpenMP_CXX_FOUND)
+    set(OpenMP_link_libraries OpenMP::OpenMP_CXX)
+    message("OpenMP found")
+endif()
+
 # Create an executable
 add_executable( poncascope
                 src/poncaAdapters.hpp
@@ -51,4 +59,6 @@ target_include_directories(poncascope PUBLIC
                             "${CMAKE_CURRENT_SOURCE_DIR}/external/ponca/")
 
 # Link settings
-target_link_libraries(poncascope polyscope Eigen3::Eigen)
+target_link_libraries(poncascope polyscope Eigen3::Eigen ${OpenMP_link_libraries})
+
+
