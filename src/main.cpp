@@ -110,31 +110,35 @@ void processPointCloud(const typename FitT::WeightFunction& w, Functor f){
 /// Generic processing function: traverse point cloud and compute mean, first and second curvatures + their direction
 /// \tparam FitT Defines the type of estimator used for computation
 template<typename FitT>
-void estimateCurvature_impl(const std::string& name) {
+void estimateDifferentialQuantities_impl(const std::string& name) {
     int nvert = tree.index_data().size();
     Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
-    Eigen::MatrixXd dmin( nvert, 3 ), dmax( nvert, 3 );
+    Eigen::MatrixXd normal( nvert, 3 ), dmin( nvert, 3 ), dmax( nvert, 3 );
 
-    measureTime( "[Ponca] Compute curvatures using " + name,
-                 [&mean, &kmin, &kmax, &dmin, &dmax]() {
+    measureTime( "[Ponca] Compute differential quantities using " + name,
+                 [&mean, &kmin, &kmax, &normal, &dmin, &dmax]() {
         processPointCloud<FitT>( //WeightConstantFunc(1),
                                  WeightSmoothFunc(NSize),
-                                 [&mean, &kmin, &kmax, &dmin, &dmax]( int i, const FitT& fit){
+                                 [&mean, &kmin, &kmax, &normal, &dmin, &dmax]( int i, const FitT& fit){
+
             mean(i) = fit.kMean();
             kmax(i) = fit.k1();
             kmin(i) = fit.k2();
 
-            dmin.row( i ) = fit.k1Direction();
-            dmax.row( i ) = fit.k2Direction();
+            normal.row( i ) = fit.primitiveGradient();
+            dmin.row( i )   = fit.k1Direction();
+            dmax.row( i )   = fit.k2Direction();
         });
     });
 
-    measureTime( "[Polyscope] Update curvature quantities",
-                 [&name, &mean, &kmin, &kmax, &dmin, &dmax]() {
+    measureTime( "[Polyscope] Update differential quantities",
+                 [&name, &mean, &kmin, &kmax, &normal, &dmin, &dmax]() {
                      cloud->addScalarQuantity(name + " - Mean Curvature", mean);
                      cloud->addScalarQuantity(name + " - K1", kmin);
                      cloud->addScalarQuantity(name + " - K2", kmax);
 
+                     cloud->addVectorQuantity(name + " - normal", normal)->setVectorLengthScale(
+                             Scalar(2) * pointRadius);
                      cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
                              Scalar(2) * pointRadius);
                      cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
@@ -142,49 +146,26 @@ void estimateCurvature_impl(const std::string& name) {
                  });
 }
 
-/// Fit plane on all vertices and estimate normals + surface variation
-void fitPlane() {
-    int nvert = tree.index_data().size();
-    Eigen::MatrixXd meshN( nvert, 3 );
-    Eigen::VectorXd surfvar ( nvert );
-
-    measureTime( "[Ponca] Fit plane",
-                 [&meshN, &surfvar]() {
-                     processPointCloud<PlaneFit>( WeightSmoothFunc(NSize),
-                                                  [&meshN, &surfvar]( int i, const PlaneFit& fit){
-                                                      meshN.row( i ) = fit.primitiveGradient();
-                                                      surfvar  ( i ) = fit.surfaceVariation();
-                                                  });
-                 });
-
-    measureTime( "[Polyscope] Update PlaneFit quantities",
-                 [&meshN, &surfvar]() {
-                     cloud->addVectorQuantity("PlaneFit - Normals", meshN)->setVectorLengthScale(
-                             Scalar(2) * pointRadius);
-                     cloud->addScalarQuantity("PlaneFit - Surface Variation", surfvar);
-                 });
-}
-
 /// Compute curvature using Covariance Plane fitting
-/// \see estimateCurvature_impl
+/// \see estimateDifferentialQuantities_impl
 void estimateCurvatureWithPlane() {
-    estimateCurvature_impl<Ponca::Basket<PPAdapter,WeightSmoothFunc,
-                                         Ponca::CovariancePlaneFit,Ponca::CovariancePlaneSpaceDer,
-                                         Ponca::CurvatureEstimator>>("PSS");
+    estimateDifferentialQuantities_impl<Ponca::Basket<PPAdapter, WeightSmoothFunc,
+            Ponca::CovariancePlaneFit, Ponca::CovariancePlaneSpaceDer,
+            Ponca::CurvatureEstimator>>("PSS");
 }
 
 /// Compute curvature using APSS
-/// \see estimateCurvature_impl
+/// \see estimateDifferentialQuantities_impl
 void estimateCurvatureWithAPSS() {
-    estimateCurvature_impl<Ponca::Basket<PPAdapter, WeightSmoothFunc,
+    estimateDifferentialQuantities_impl<Ponca::Basket<PPAdapter, WeightSmoothFunc,
             Ponca::OrientedSphereFit, Ponca::OrientedSphereSpaceDer,
             Ponca::CurvatureEstimator>>("APSS");
 }
 
 /// Compute curvature using Algebraic Shape Operator
-/// \see estimateCurvature_impl
+/// \see estimateDifferentialQuantities_impl
 void estimateCurvatureWithASO() {
-    estimateCurvature_impl<Ponca::Basket<PPAdapter, WeightSmoothFunc,
+    estimateDifferentialQuantities_impl<Ponca::Basket<PPAdapter, WeightSmoothFunc,
             Ponca::OrientedSphereFit, Ponca::OrientedSphereSpaceDer, Ponca::MlsSphereFitDer,
             Ponca::CurvatureEstimator>>("ASO");
 }
@@ -216,12 +197,8 @@ void callback() {
 
     ImGui::Separator();
 
-    ImGui::Text("Computations");
-    if (ImGui::Button("fit plane")) fitPlane();
-    ImGui::Separator();
-
-    ImGui::Text("Curvature estimation");
-    if (ImGui::Button("Plane"))  estimateCurvatureWithPlane();
+    ImGui::Text("Differential estimators");
+    if (ImGui::Button("Plane (PCA)"))  estimateCurvatureWithPlane();
     ImGui::SameLine();
     if (ImGui::Button("APSS"))  estimateCurvatureWithAPSS();
     ImGui::SameLine();
