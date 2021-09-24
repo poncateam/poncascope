@@ -11,6 +11,13 @@ With the current version, you will be able to:
 
 Computations are all done using Ponca on polyscope datastructures (see code for more details on data biding). Spatial queries are accelerated using Ponca Kdtree.
 
+## Gallery
+
+### Main features
+[![Alt text](https://user-images.githubusercontent.com/6310221/134690163-f8ea4965-2e6c-4a84-9caa-d553fbe4e40c.png)](https://youtu.be/WRqO93rEy6s)
+
+### Mean curvature estimation
 <img width="1165" alt="image" src="https://user-images.githubusercontent.com/6310221/134543845-2f9094dd-1025-482a-b735-504b9cd8c5cd.png">
 
+### Principale curvatures estimation
 <img width="1165" alt="image" src="https://user-images.githubusercontent.com/6310221/134542628-bbce2151-b6b8-43b1-82d0-b869e5ef373a.png">
