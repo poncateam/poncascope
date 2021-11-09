@@ -11,6 +11,14 @@ With the current version, you will be able to:
 
 Computations are all done using Ponca on polyscope datastructures (see code for more details on data biding). Spatial queries are accelerated using Ponca Kdtree.
 
+## Compilation instructions
+```bash
+git clone https://github.com/poncateam/poncascope.git # Fetch repository
+git submodule update --recursive --init               # Get dependencies: Polyscope, Ponca
+mkdir build && cd build                               # Goto to compilation directory
+cmake ../ -DCMAKE_BUILD_TYPE=Release                  # Compile in release mode
+```
+
 ## Gallery
 
 ### Main features
