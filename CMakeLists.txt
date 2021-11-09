@@ -18,19 +18,26 @@ set(CMAKE_RUNTIME_OUTPUT_DIRECTORY ${CMAKE_BINARY_DIR}/bin)
 ### Compiler options
 set( CMAKE_EXPORT_COMPILE_COMMANDS 1 ) # Emit a compile flags file to support completion engines
 
-# Need to force getting Eigen3 package, so both Ponca and polyscope use the same version
-find_package(Eigen3 REQUIRED)
-
-# Add polyscope
-message("\n\n == CMAKE recursively building Polyscope\n")
-add_subdirectory("external/polyscope")
-
 # Add ponca
 message("\n\n == CMAKE add Ponca\n")
 set( PONCA_CONFIGURE_EXAMPLES CACHE BOOL OFF)
 set( PONCA_CONFIGURE_TESTS    CACHE BOOL OFF)
 set( PONCA_CONFIGURE_DOC      CACHE BOOL OFF)
 add_subdirectory("external/ponca")
+
+# Check if Eigen is used from a package or from Ponca submodules
+find_package(Eigen3 QUIET)
+set(Eigen_Deps "")
+if( NOT Eigen3_FOUND ) # Should use Ponca submodule
+	message( "Polyscope should use Eigen from ${EIGEN3_INCLUDE_DIRS}" ) 
+	include_directories(${EIGEN3_INCLUDE_DIRS})
+else()
+	set(Eigen_Deps Eigen3::Eigen)
+endif()
+
+# Add polyscope
+message("\n\n == CMAKE recursively building Polyscope\n")
+add_subdirectory("external/polyscope")
 
 # Move assets to binary folder
 add_custom_target( poncascope-copyassets
@@ -59,6 +66,6 @@ target_include_directories(poncascope PUBLIC
                             "${CMAKE_CURRENT_SOURCE_DIR}/external/ponca/")
 
 # Link settings
-target_link_libraries(poncascope polyscope Eigen3::Eigen ${OpenMP_link_libraries})
+target_link_libraries(poncascope polyscope ${Eigen_Deps} ${OpenMP_link_libraries})
 
 
