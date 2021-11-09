@@ -218,6 +218,7 @@ void callback() {
 int main(int argc, char **argv) {
     // Options
     polyscope::options::autocenterStructures = true;
+    polyscope::options::programName = "poncascope";
     polyscope::view::windowWidth = 1024;
     polyscope::view::windowHeight = 1024;
 
