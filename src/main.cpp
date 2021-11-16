@@ -233,7 +233,14 @@ int main(int argc, char **argv) {
         igl::readOBJ(filename, cloudV, meshF);
         igl::per_vertex_normals(cloudV, meshF, cloudN);
     } );
-    std::cout << "Vertex count: " << cloudV.rows() << std::endl;
+
+    // Check if normals have been properly loaded
+    int nbUnitNormal = cloudN.rowwise().squaredNorm().sum();
+    if ( nbUnitNormal != cloudV.rows() ) {
+        std::cerr << "[libIGL] An error occurred when computing the normal vectors from the mesh. Aborting..."
+                  << std::endl;
+        return EXIT_FAILURE;
+    }
 
     // Build Ponca KdTree
     measureTime( "[Ponca] Build KdTree", []() {
@@ -251,5 +258,5 @@ int main(int argc, char **argv) {
     // Show the gui
     polyscope::show();
 
-    return 0;
+    return EXIT_SUCCESS;
 }
