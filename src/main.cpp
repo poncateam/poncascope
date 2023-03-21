@@ -58,7 +58,7 @@ void colorizeEuclideanNeighborhood() {
     const auto &p = tree.point_data()[iVertexSource];
     for (int j : tree.range_neighbors(iVertexSource, NSize)){
         const auto &q = tree.point_data()[j];
-        closest(j) = w.w( q.pos() - p.pos(), q );
+        closest(j) = w.w( q.pos() - p.pos(), q ).first;
     }
     cloud->addScalarQuantity(  "range neighborhood", closest);
 }
@@ -153,25 +153,34 @@ void estimateDifferentialQuantities_impl(const std::string& name) {
 /// Compute curvature using Covariance Plane fitting
 /// \see estimateDifferentialQuantities_impl
 void estimateDifferentialQuantitiesWithPlane() {
-    estimateDifferentialQuantities_impl<Ponca::Basket<PPAdapter, SmoothWeightFunc,
-            Ponca::CovariancePlaneFit, Ponca::CovariancePlaneSpaceDer,
-            Ponca::CurvatureEstimator>>("PSS");
+    estimateDifferentialQuantities_impl<
+            Ponca::BasketDiff<
+                Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::CovariancePlaneFit>,
+                        Ponca::DiffType::FitSpaceDer,
+                        Ponca::CovariancePlaneDer,
+                        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>>("PSS");
 }
 
 /// Compute curvature using APSS
 /// \see estimateDifferentialQuantities_impl
 void estimateDifferentialQuantitiesWithAPSS() {
-    estimateDifferentialQuantities_impl<Ponca::Basket<PPAdapter, SmoothWeightFunc,
-            Ponca::OrientedSphereFit, Ponca::OrientedSphereSpaceDer,
-            Ponca::CurvatureEstimator>>("APSS");
+    estimateDifferentialQuantities_impl<
+            Ponca::BasketDiff<
+                    Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>,
+                    Ponca::DiffType::FitSpaceDer,
+                    Ponca::OrientedSphereDer,
+                    Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>>("APSS");
 }
 
 /// Compute curvature using Algebraic Shape Operator
 /// \see estimateDifferentialQuantities_impl
 void estimateDifferentialQuantitiesWithASO() {
-    estimateDifferentialQuantities_impl<Ponca::Basket<PPAdapter, SmoothWeightFunc,
-            Ponca::OrientedSphereFit, Ponca::OrientedSphereSpaceDer, Ponca::MlsSphereFitDer,
-            Ponca::CurvatureEstimator>>("ASO");
+    estimateDifferentialQuantities_impl<
+            Ponca::BasketDiff<
+                    Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>,
+                    Ponca::DiffType::FitSpaceDer,
+                    Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
+                    Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>>("ASO");
 }
 
 /// Dry run: loop over all vertices + run MLS loops without computation
