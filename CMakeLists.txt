@@ -69,3 +69,9 @@ target_include_directories(poncascope PUBLIC
 target_link_libraries(poncascope polyscope ${Eigen_Deps} ${OpenMP_link_libraries})
 
 
+# Fix potential bug on windows (appears with VSCode, but not with VS)
+#   Moves bin to project/bin instead of project/bin/BuidType/
+set_target_properties(poncascope PROPERTIES RUNTIME_OUTPUT_DIRECTORY $<1:${CMAKE_RUNTIME_OUTPUT_DIRECTORY}>)
+
+
+
