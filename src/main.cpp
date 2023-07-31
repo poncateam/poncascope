@@ -123,12 +123,12 @@ void estimateDifferentialQuantities_impl(const std::string& name) {
                                 ( int i, const FitT& fit, const VectorType& mlsPos){
 
             mean(i) = fit.kMean();
-            kmax(i) = fit.k1();
-            kmin(i) = fit.k2();
+            kmax(i) = fit.kmax();
+            kmin(i) = fit.kmin();
 
             normal.row( i ) = fit.primitiveGradient();
-            dmin.row( i )   = fit.k1Direction();
-            dmax.row( i )   = fit.k2Direction();
+            dmin.row( i )   = fit.kminDirection();
+            dmax.row( i )   = fit.kmaxDirection();
 
             proj.row( i )   = mlsPos - tree.point_data()[i].pos();
         });
