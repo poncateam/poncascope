@@ -73,5 +73,8 @@ target_link_libraries(poncascope polyscope ${Eigen_Deps} ${OpenMP_link_libraries
 #   Moves bin to project/bin instead of project/bin/BuidType/
 set_target_properties(poncascope PROPERTIES RUNTIME_OUTPUT_DIRECTORY $<1:${CMAKE_RUNTIME_OUTPUT_DIRECTORY}>)
 
-
+# Fix compilation error with MSVC
+if (MSVC)
+  target_compile_options(poncascope PRIVATE /bigobj)
+endif ()
 
