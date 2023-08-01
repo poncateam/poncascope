@@ -1,0 +1,36 @@
+name: MSbuild
+
+on:
+  push:
+    branches: [ "main" ]
+  pull_request:
+    branches: [ "main" ]
+
+env:
+  # Customize the CMake build type here (Release, Debug, RelWithDebInfo, etc.)
+  BUILD_TYPE: Release
+
+jobs:
+  build:
+    runs-on: windows-latest
+
+    steps:
+    - uses: seanmiddleditch/gha-setup-ninja@master
+    - name: Add msbuild to PATH
+      uses: seanmiddleditch/gha-setup-vsdevenv@master
+
+    - uses: actions/checkout@v3
+      with:
+        submodules: 'recursive'
+
+    - name: Configure CMake
+      # Configure CMake for MSbuild in a 'build' subdirectory.
+      # `CMAKE_BUILD_TYPE` is not required if you are using a multi-configuration generators
+      # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
+      run: |
+        cmake -B ${{github.workspace}}/build -GNinja -DCMAKE_CXX_COMPILER=cl.exe -DCMAKE_C_COMPILER=cl.exe
+
+    - name: Build
+      # Build your program with the given configuration
+      run: cmake --build ${{github.workspace}}/build --parallel --config ${{env.BUILD_TYPE}}
+
