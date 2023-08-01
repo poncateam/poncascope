@@ -19,6 +19,10 @@ jobs:
     runs-on: ${{ matrix.os }}
     
     steps:
+    - name: Install Polyscope dependencies (ubuntu)
+      run: sudo apt-get install -y xorg-dev libglu1-mesa-dev freeglut3-dev mesa-common-dev
+      if: matrix.os == 'ubuntu-latest'
+
     - uses: actions/checkout@v3
       with:
         submodules: 'recursive'
