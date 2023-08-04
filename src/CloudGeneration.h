@@ -73,8 +73,11 @@ void loadObject (MyPointCloud &cloud, std::string filename) {
         }
         else {
             igl::read_triangle_mesh(filename, cloudV, meshF);
-            igl::per_vertex_normals(cloudV, meshF, cloudN);
         }
+        
+        if ( cloudN.rows() == 0 )
+            igl::per_vertex_normals(cloudV, meshF, cloudN);
+        
     }
     // Check if there is mesh 
     if ( meshF.rows() == 0 && cloudN.rows() == 0 ) {
