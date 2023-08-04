@@ -41,12 +41,12 @@ public:
     PONCA_MULTIARCH inline BlockPointAdapter(InternalType v, InternalType n)
             : m_pos (v), m_nor (n) {}
 
-    PONCA_MULTIARCH inline InternalType pos()    const { return m_pos; }
-    PONCA_MULTIARCH inline InternalType normal() const { return m_nor; }
+    PONCA_MULTIARCH inline VectorType pos()    const { return m_pos; }
+    PONCA_MULTIARCH inline VectorType normal() const { return m_nor; }
 
 private:
-    InternalType m_pos;
-    InternalType m_nor;
+    VectorType m_pos;
+    VectorType m_nor;
 };
 
 
