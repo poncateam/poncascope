@@ -1,4 +1,4 @@
-// GUI.hpp
+// GUI.h
 #pragma once
 
 #include <fstream>
@@ -85,4 +85,4 @@ class GUI {
 
 }; // class GUI
 
-#include "GUI.hpp"
+#include "GUI.cpp"
