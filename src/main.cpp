@@ -51,13 +51,13 @@ void measureTime( const std::string &actionName, Functor F ){
 }
 
 template <typename Functor>
-void processRangeNeighbors(Functor f){
+void processRangeNeighbors(int i, Functor f){
     if(useKnnGraph)
-        for (int j : knnGraph->range_neighbors(iVertexSource, NSize)){
+        for (int j : knnGraph->range_neighbors(i, NSize)){
             f(j);
         }
     else
-        for (int j : tree.range_neighbors(iVertexSource, NSize)){
+        for (int j : tree.range_neighbors(i, NSize)){
             f(j);
         }
 }
@@ -75,7 +75,7 @@ void colorizeEuclideanNeighborhood() {
 
     closest(iVertexSource) = 2;
     const auto &p = tree.point_data()[iVertexSource];
-    processRangeNeighbors([w,p,&closest](int j){
+    processRangeNeighbors(iVertexSource, [w,p,&closest](int j){
         const auto &q = tree.point_data()[j];
         closest(j) = w.w( q.pos() - p.pos(), q ).first;
     });
@@ -100,7 +100,7 @@ void colorizeKnn() {
     closest.setZero();
 
     closest(iVertexSource) = 2;
-    processRangeNeighbors([&closest](int j){
+    processRangeNeighbors(iVertexSource, [&closest](int j){
         closest(j) = 1;
     });
     cloud->addScalarQuantity(  "knn neighborhood", closest);
@@ -122,7 +122,7 @@ void processPointCloud(const typename FitT::WeightFunction& w, Functor f){
             fit.setWeightFunc(w);
             fit.init( pos );
 
-            processRangeNeighbors([&fit](int j){
+            processRangeNeighbors(i, [&fit](int j){
                 fit.addNeighbor(tree.point_data()[j]);
             });
 
