@@ -10,6 +10,8 @@
 #include <Ponca/SpatialPartitioning>
 #include "poncaAdapters.hpp"
 
+#include "polyscopeSlicer.hpp"
+
 #include <iostream>
 #include <utility>
 #include <chrono>
@@ -36,6 +38,10 @@ float NSize        = 0.1;   /// < neighborhood size (euclidean)
 int mlsIter        = 3;     /// < number of moving least squares iterations
 Scalar pointRadius = 0.005; /// < display radius of the point cloud
 bool useKnnGraph   = false; /// < use k-neighbor graph instead of kdtree
+
+// Slicer
+int slice;
+int axis;
 
 
 /// Convenience function measuring and printing the processing time of F
@@ -254,19 +260,68 @@ void callback() {
     ImGui::SameLine();
     if (ImGui::Button("ASO")) estimateDifferentialQuantitiesWithASO();
 
+    ImGui::Separator();
+    ImGui::SliderInt("Slice / 1024", &slice, 0, 1024);
+    ImGui::RadioButton("X axis", &axis, 0); ImGui::SameLine();
+    ImGui::RadioButton("Y axis", &axis, 1); ImGui::SameLine();
+    ImGui::RadioButton("Z axis", &axis, 2);
+    if (ImGui::Button("Update"))
+    {
+      //tmp
+      auto eval_scalar_field_ASO = [&](const VectorType& input_pos) -> Scalar
+      {
+        using FitASO = Ponca::BasketDiff<
+        Ponca::Basket<
+        PPAdapter,
+        SmoothWeightFunc,
+        Ponca::OrientedSphereFit>,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::OrientedSphereDer,
+        Ponca::MlsSphereFitDer,
+        Ponca::CurvatureEstimatorBase,
+        Ponca::NormalDerivativesCurvatureEstimator>;
+        VectorType current_pos = input_pos;
+        Scalar current_value = std::numeric_limits<Scalar>::max();
+        for(int mm = 0; mm < mlsIter; ++mm)
+        {
+          FitASO fit;
+          fit.setWeightFunc(SmoothWeightFunc(NSize));
+          fit.init(current_pos); // weighting function using current pos (not input pos)
+          for(int j : tree.range_neighbors(current_pos, NSize)) {
+            fit.addNeighbor(tree.point_data()[j]);
+          }
+          //std::cout<<"Final : "<<fit.finalize()<<" "<<NSize<<std::endl;
+          if(fit.finalize() == Ponca::STABLE) {
+            current_pos = fit.project(input_pos); // always project input pos
+            current_value = fit.potential(input_pos);
+            // current_gradient = fit.primitiveGradient(input_pos);
+          } else {
+            // not enough neighbors (if far from the point cloud)
+            return .0;//std::numeric_limits<Scalar>::max();
+          }
+        }
+        return current_value;
+      };
+      
+      VectorType lower(-2,-2,-2),upper(2,2,2);
+      auto distX= [](const VectorType &v){ return v[0];};
+      auto  mySlicer = makeSlicer("slicer",eval_scalar_field_ASO,lower, upper, 1024,axis);
+      mySlicer.regiterSlicer(slice);
+    }
+    ImGui::SameLine();
     ImGui::PopItemWidth();
 }
 
 int main(int argc, char **argv) {
     // Options
-    polyscope::options::autocenterStructures = true;
+    polyscope::options::autocenterStructures = false;
     polyscope::options::programName = "poncascope";
     polyscope::view::windowWidth = 1024;
     polyscope::view::windowHeight = 1024;
 
     // Initialize polyscope
     polyscope::init();
-
+  
     measureTime( "[libIGL] Load Armadillo", []()
     // For convenience: use libIGL to load a mesh, and store only the vertices location and normal vector
     {
@@ -297,6 +352,7 @@ int main(int argc, char **argv) {
     // Add the callback
     polyscope::state::userCallback = callback;
 
+  
     // Show the gui
     polyscope::show();
 

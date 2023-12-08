@@ -55,6 +55,7 @@ endif()
 # Create an executable
 add_executable( poncascope
                 src/poncaAdapters.hpp
+                src/polyscopeSlicer.hpp
                 src/main.cpp
                 )
 
