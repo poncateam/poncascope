@@ -1,3 +1,28 @@
+//MIT License
+//
+//Copyright (c) 2023 Ponca Development Group
+//
+//        Permission is hereby granted, free of charge, to any person obtaining a copy
+//of this software and associated documentation files (the "Software"), to deal
+//in the Software without restriction, including without limitation the rights
+//        to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+//        copies of the Software, and to permit persons to whom the Software is
+//furnished to do so, subject to the following conditions:
+//
+//The above copyright notice and this permission notice shall be included in all
+//        copies or substantial portions of the Software.
+//
+//THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+//IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+//FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+//        AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+//LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+//OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+//SOFTWARE.
+
+/// \file This file contains a slicer of the implicit function as a Polyscope surface mesh
+/// \author David Coeurjolly <david.coeurjolly@cnrs.fr >
+
 #pragma once
 #include <vector>
 #include <array>
@@ -24,8 +49,8 @@
  * @return a pointer to the polyscope surface mesh object
  */
 template<typename Point,typename Functor>
-polyscope::SurfaceMesh* registerRegularSlicer(std::string name,
-                                              Functor &implicit,
+polyscope::SurfaceMesh* registerRegularSlicer(const std::string &name,
+                                              const Functor &implicit,
                                               const Point &lowerBound,
                                               const Point &upperBound,
                                               size_t nbSteps,
@@ -72,11 +97,12 @@ polyscope::SurfaceMesh* registerRegularSlicer(std::string name,
       faces.push_back(face);
   }
   
-  //Evaluatng the mplicit function (in parallel)
+  //Evaluating the mplicit function (in parallel using openmp)
 #pragma omp parallel for
   for(size_t id=0; id < nbSteps*nbSteps; ++id)
     values[id]  = implicit(vertices[id]);
 
+  //Polyscope registration
   auto psm = polyscope::registerSurfaceMesh(name, vertices,faces);
   psm->addVertexScalarQuantity("values",values)->setEnabled(true);
   return psm;
