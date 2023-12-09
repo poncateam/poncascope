@@ -1,127 +1,83 @@
 #pragma once
 #include <vector>
-#include <functional>
+#include <array>
 #include <polyscope/surface_mesh.h>
 #include <polyscope/polyscope.h>
 
+
+/**
+ * Create and register a polyscope surface mesh that slices a given implicit function.
+ * This function uses a regular grid and evaluates the implicit function at the grid vertex positions.
+ *
+ * The implicit function could be a C/C++ function or any lambda taking as input a Point and returning a double.
+ *
+ * Note: if openmp is available, the implicit function is evaluated in parallel.
+ *
+ * @param name the name of the slicer
+ * @param implicit the implicit function that maps points (type Point) to scalars.
+ * @param lowerBound the bbox lower bound of the implicit function domain.
+ * @param upperBound the bbox upper bound of the implicit function domain.
+ * @param nbSteps step size for the regular grid construction (eg 256)
+ * @param axis the axis to slice {0,1,2}.
+ * @param slice the relative position of the slice in [0,1]
+ *
+ * @return a pointer to the polyscope surface mesh object
+ */
 template<typename Point,typename Functor>
-struct PolyscopeSlicer
+polyscope::SurfaceMesh* registerRegularSlicer(std::string name,
+                                              Functor &implicit,
+                                              const Point &lowerBound,
+                                              const Point &upperBound,
+                                              size_t nbSteps,
+                                              size_t axis,
+                                              float slice=0.0)
 {
+  size_t sliceid = static_cast<size_t>(std::floor(slice*nbSteps));
   
-  Functor  _implicit;
-  Point _lowerBound;
-  Point _upperBound;
-  size_t _nbSteps;
-  size_t _axis;
-  size_t _slice;
-  std::string _name;
+  auto dim1 = (axis+1)%3;
+  auto dim2 = (axis+2)%3;
   
-  PolyscopeSlicer(std::string name,
-                  Functor &implicit,
-                  const Point &lowerBound,
-                  const Point &upperBound,
-                  size_t nbSteps,
-                  size_t axis): _name(name),_implicit(implicit),_lowerBound(lowerBound),
-  _upperBound(upperBound),_nbSteps(nbSteps),_axis(axis)
-  {
-  }
-    
-  polyscope::SurfaceMesh* regiterSlicer(size_t slice=0)
-  {
-    _slice = slice;
-    auto dim1 = (_axis+1)%3;
-    auto dim2 = (_axis+2)%3;
-    
-    double du = (_upperBound[dim1]-_lowerBound[dim1])/(double)_nbSteps;
-    double dv = (_upperBound[dim2]-_lowerBound[dim2])/(double)_nbSteps;
-    double dw = (_upperBound[_axis]-_lowerBound[_axis])/(double)_nbSteps;
-    
-    double u = _lowerBound[dim1];
-    double v = _lowerBound[dim2];
-    double w = _lowerBound[_axis] + _slice*dw;
-    
-    Point p;
-    Point vu,vv;
-    switch (_axis) {
-      case 0: p=Point(w,u,v); vu=Point(0,du,0); vv=Point(0,0,dv);break;
-      case 1: p=Point(u,w,v); vu=Point(du,0,0); vv=Point(0,0,dv);break;
-      case 2: p=Point(u,v,w); vu=Point(du,0,0); vv=Point(0,dv,0);break;
-    }
-    
-    std::vector<Point> vertices(_nbSteps*_nbSteps);
-    std::vector<double> values(_nbSteps*_nbSteps);
-    std::vector<std::array<size_t,4>> faces;
-    std::array<size_t,4> face;
-    
-    for(size_t id=0; id < _nbSteps*_nbSteps; ++id)
-    {
-      auto i = id % _nbSteps;
-      auto j = id / _nbSteps;
-      p = _lowerBound + i*vu + j*vv;
-      p[_axis] += _slice*dw;
-      
-      vertices[id] = p;
-      values[id]  = _implicit(p);
-      face = { id, id+1, id+1+_nbSteps, id+_nbSteps };
-      if (((i+1) < _nbSteps) && ((j+1)<_nbSteps))
-        faces.push_back(face);
-    }
-    std::cout<<"vertices: "<<vertices.size()<<std::endl;
-    auto psm = polyscope::registerSurfaceMesh(_name, vertices,faces);
-    psm->addVertexScalarQuantity("values",values)->setEnabled(true);
-    return psm;
+  double du = (upperBound[dim1]-lowerBound[dim1])/(double)nbSteps;
+  double dv = (upperBound[dim2]-lowerBound[dim2])/(double)nbSteps;
+  double dw = (upperBound[axis]-lowerBound[axis])/(double)nbSteps;
+  
+  double u = lowerBound[dim1];
+  double v = lowerBound[dim2];
+  double w = lowerBound[axis] + sliceid*dw;
+  
+  Point p;
+  Point vu,vv;
+  switch (axis) {
+    case 0: p=Point(w,u,v); vu=Point(0,du,0); vv=Point(0,0,dv);break;
+    case 1: p=Point(u,w,v); vu=Point(du,0,0); vv=Point(0,0,dv);break;
+    case 2: p=Point(u,v,w); vu=Point(du,0,0); vv=Point(0,dv,0);break;
   }
   
+  std::vector<Point> vertices(nbSteps*nbSteps);
+  std::vector<double> values(nbSteps*nbSteps);
+  std::vector<std::array<size_t,4>> faces;
+  faces.reserve(nbSteps*nbSteps);
+  std::array<size_t,4> face;
   
-  void updateSlice(size_t slice)
+  //Regular grid construction
+  for(size_t id=0; id < nbSteps*nbSteps; ++id)
   {
-    auto dim1 = (_axis+1)%3;
-    auto dim2 = (_axis+2)%3;
-    double du = (_upperBound[dim1]-_lowerBound[dim1])/(double)_nbSteps;
-    double dv = (_upperBound[dim2]-_lowerBound[dim2])/(double)_nbSteps;
-    double dw = (_upperBound[_axis]-_lowerBound[_axis])/(double)_nbSteps;
-    double u = _lowerBound[dim1];
-    double v = _lowerBound[dim2];
-    double w = _lowerBound[_axis] + slice*dw;
-    
-    Point p;
-    Point vu,vv;
-    switch (_axis) {
-      case 0: p=Point(w,u,v); vu=Point(0,du,0); vv=Point(0,0,dv);break;
-      case 1: p=Point(u,w,v); vu=Point(du,0,0); vv=Point(0,0,dv);break;
-      case 2: p=Point(u,v,w); vu=Point(du,0,0); vv=Point(0,dv,0);break;
-    }
-    
-    std::vector<Point> vertices(_nbSteps*_nbSteps);
-    std::vector<double> values(_nbSteps*_nbSteps);
-    for(size_t id=0; id < _nbSteps*_nbSteps; ++id)
-    {
-      auto i = id % _nbSteps;
-      auto j = id / _nbSteps;
-      p = _lowerBound + i*vu + j*vv;
-      vertices[id] = p;
-      values[id]  = _implicit(p);
-    }
-    //auto psm = polyscope::registerSurfaceMesh("Slice "+std::to_string(axis), vertices,faces);
-    polyscope::getSurfaceMesh(_name)->updateVertexPositions(vertices);
-    polyscope::getSurfaceMesh(_name)->addVertexDistanceQuantity("values",values);
+    auto i = id % nbSteps;
+    auto j = id / nbSteps;
+    p = lowerBound + i*vu + j*vv;
+    p[axis] += sliceid*dw;
+    vertices[id] = p;
+    face = { id, id+1, id+1+nbSteps, id+nbSteps };
+    if (((i+1) < nbSteps) && ((j+1)<nbSteps))
+      faces.push_back(face);
   }
-};
+  
+  //Evaluatng the mplicit function (in parallel)
+#pragma omp parallel for
+  for(size_t id=0; id < nbSteps*nbSteps; ++id)
+    values[id]  = implicit(vertices[id]);
 
-
-
-template<typename Point, typename Functor>
-PolyscopeSlicer<Point,Functor> makeSlicer(std::string name,
-                                          Functor & implicit,
-                                          const Point &lowerBound,
-                                          const Point &upperBound,
-                                          size_t nbSteps,
-                                          size_t axis)
-{
-  return PolyscopeSlicer<Point,Functor>(name,
-                                        implicit,
-                                        lowerBound,
-                                        upperBound,
-                                        nbSteps,
-                                        axis);
+  auto psm = polyscope::registerSurfaceMesh(name, vertices,faces);
+  psm->addVertexScalarQuantity("values",values)->setEnabled(true);
+  return psm;
 }
