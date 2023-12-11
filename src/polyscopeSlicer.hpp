@@ -97,8 +97,8 @@ polyscope::SurfaceMesh* registerRegularSlicer(const std::string &name,
       faces.push_back(face);
   }
   
-  //Evaluating the mplicit function (in parallel using openmp)
-#pragma omp parallel for
+  //Evaluating the implicit function (in parallel using openmp)
+#pragma omp parallel for default(none) shared(nbSteps,values,vertices,implicit)
   for(int id=0; id < nbSteps*nbSteps; ++id)
     values[id]  = implicit(vertices[id]);
 

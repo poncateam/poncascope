@@ -3,7 +3,6 @@
 #include <igl/readOBJ.h>
 #include <igl/per_vertex_normals.h>
 
-#include "polyscope/messages.h"
 #include "polyscope/point_cloud.h"
 
 #include <Ponca/Fitting>
@@ -116,11 +115,8 @@ void colorizeKnn() {
 /// \note Functor is called only if fit is stable
 template<typename FitT, typename Functor>
 void processPointCloud(const typename FitT::WeightFunction& w, Functor f){
-
-    int nvert = tree.index_data().size();
-
 #pragma omp parallel for
-    for (int i = 0; i < nvert; ++i) {
+    for (int i = 0; i < tree.index_data().size(); ++i) {
         VectorType pos = tree.point_data()[i].pos();
 
         for( int mm = 0; mm < mlsIter; ++mm) {
