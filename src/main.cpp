@@ -40,8 +40,8 @@ bool useKnnGraph   = false; /// < use k-neighbor graph instead of kdtree
 
 
 // Slicer
-float slice;
-int axis;
+float slice    = 0.f;
+int axis       = 0;
 bool isHDSlicer=false;
 
 /// Convenience function measuring and printing the processing time of F
