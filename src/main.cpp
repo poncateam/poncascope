@@ -295,6 +295,8 @@ void callback() {
     if (ImGui::Button("ASO")) estimateDifferentialQuantitiesWithASO();
     
     ImGui::Separator();
+  
+    ImGui::Text("Implicit function slicer");
     ImGui::SliderFloat("Slice", &slice, 0, 1.0); ImGui::SameLine();
     ImGui::Checkbox("HD", &isHDSlicer);
     ImGui::RadioButton("X axis", &axis, 0); ImGui::SameLine();
