@@ -300,11 +300,18 @@ void callback() {
     ImGui::RadioButton("X axis", &axis, 0); ImGui::SameLine();
     ImGui::RadioButton("Y axis", &axis, 1); ImGui::SameLine();
     ImGui::RadioButton("Z axis", &axis, 2);
+    const char* items[] = { "ASO", "APSS", "PSS"};
+    static int item_current = 0;
+    ImGui::Combo("Fit function", &item_current, items, IM_ARRAYSIZE(items));
     if (ImGui::Button("Update"))
     {
       VectorType lower(-2,-2,-2),upper(2,2,2);
-      auto mySlicer = registerRegularSlicer("slicer", evalScalarFieldWithASO,lower, upper,
-                                            isHDSlicer?1024:256, axis, slice);
+      switch(item_current)
+      {
+        case 0: registerRegularSlicer("slicer", evalScalarField_impl<FitASO>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
+        case 1: registerRegularSlicer("slicer", evalScalarField_impl<FitAPSS>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
+        case 2: registerRegularSlicer("slicer", evalScalarField_impl<FitPlane>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
+      }
     }
     ImGui::SameLine();
     ImGui::PopItemWidth();
