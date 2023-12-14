@@ -258,13 +258,6 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
     return current_value;
 }
 
-/// Compute curvature using Algebraic Shape Operator
-/// \see estimateDifferentialQuantities_impl
-inline Scalar evalScalarFieldWithASO(const VectorType& input_pos) {
-    return evalScalarField_impl<FitASO>(input_pos);
-}
-
-
 /// Define Polyscope callbacks
 void callback() {
 
