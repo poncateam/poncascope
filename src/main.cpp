@@ -38,10 +38,13 @@ Scalar pointRadius = 0.005; /// < display radius of the point cloud
 bool useKnnGraph   = false; /// < use k-neighbor graph instead of kdtree
 
 
+
 // Slicer
 float slice    = 0.f;
 int axis       = 0;
 bool isHDSlicer=false;
+VectorType lower, upper;
+
 
 /// Convenience function measuring and printing the processing time of F
 template <typename Functor>
@@ -300,7 +303,6 @@ void callback() {
     ImGui::Combo("Fit function", &item_current, items, IM_ARRAYSIZE(items));
     if (ImGui::Button("Update"))
     {
-      VectorType lower(-2,-2,-2),upper(2,2,2);
       switch(item_current)
       {
         case 0: registerRegularSlicer("slicer", evalScalarField_impl<FitASO>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
@@ -339,6 +341,10 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
+    //Bounding Box (used in the slicer)
+    lower = cloudV.colwise().minCoeff();
+    upper = cloudV.colwise().maxCoeff();
+  
     // Build Ponca KdTree
     measureTime( "[Ponca] Build KdTree", []() {
         buildKdTree(cloudV, cloudN, tree);
