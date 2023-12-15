@@ -238,7 +238,7 @@ inline void mlsDryRun() {
 
 ///Evaluate scalar field for generic FitType.
 ///// \tparam FitT Defines the type of estimator used for computation
-template<typename FitT>
+template<typename FitT, bool isSigned = true>
 Scalar evalScalarField_impl(const VectorType& input_pos)
 {
     VectorType current_pos = input_pos;
@@ -251,7 +251,7 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
             auto res = fit.computeWithIds(tree.range_neighbors(current_pos, NSize), tree.point_data());
             if(res == Ponca::STABLE) {
             current_pos = fit.project(input_pos); // always project input pos
-            current_value = fit.potential(input_pos);
+            current_value = isSigned ? fit.potential(input_pos) : std::abs(fit.potential(input_pos));
             // current_gradient = fit.primitiveGradient(input_pos);
         } else {
             // not enough neighbors (if far from the point cloud)
@@ -305,9 +305,9 @@ void callback() {
     {
       switch(item_current)
       {
-        case 0: registerRegularSlicer("slicer", evalScalarField_impl<FitASO>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
-        case 1: registerRegularSlicer("slicer", evalScalarField_impl<FitAPSS>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
-        case 2: registerRegularSlicer("slicer", evalScalarField_impl<FitPlane>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
+        case 0: registerRegularSlicer("slicer", evalScalarField_impl<FitASO, true>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
+        case 1: registerRegularSlicer("slicer", evalScalarField_impl<FitAPSS, true>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
+        case 2: registerRegularSlicer("slicer", evalScalarField_impl<FitPlane, false>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
       }
     }
     ImGui::SameLine();
