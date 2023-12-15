@@ -3,12 +3,12 @@
 #include <igl/readOBJ.h>
 #include <igl/per_vertex_normals.h>
 
-#include "polyscope/messages.h"
 #include "polyscope/point_cloud.h"
 
 #include <Ponca/Fitting>
 #include <Ponca/SpatialPartitioning>
 #include "poncaAdapters.hpp"
+#include "polyscopeSlicer.hpp"
 
 #include <iostream>
 #include <utility>
@@ -36,6 +36,14 @@ float NSize        = 0.1;   /// < neighborhood size (euclidean)
 int mlsIter        = 3;     /// < number of moving least squares iterations
 Scalar pointRadius = 0.005; /// < display radius of the point cloud
 bool useKnnGraph   = false; /// < use k-neighbor graph instead of kdtree
+
+
+
+// Slicer
+float slice    = 0.f;
+int axis       = 0;
+bool isHDSlicer=false;
+VectorType lower, upper;
 
 
 /// Convenience function measuring and printing the processing time of F
@@ -110,11 +118,8 @@ void colorizeKnn() {
 /// \note Functor is called only if fit is stable
 template<typename FitT, typename Functor>
 void processPointCloud(const typename FitT::WeightFunction& w, Functor f){
-
-    int nvert = tree.index_data().size();
-
 #pragma omp parallel for
-    for (int i = 0; i < nvert; ++i) {
+    for (int i = 0; i < tree.index_data().size(); ++i) {
         VectorType pos = tree.point_data()[i].pos();
 
         for( int mm = 0; mm < mlsIter; ++mm) {
@@ -181,49 +186,80 @@ void estimateDifferentialQuantities_impl(const std::string& name) {
                  });
 }
 
+using FitDry = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::DryFit>;
+
+using FitPlane = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::CovariancePlaneFit>;
+using FitPlaneDiff = Ponca::BasketDiff<
+        FitPlane,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::CovariancePlaneDer,
+        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+
+using FitAPSS = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>;
+using FitAPSSDiff = Ponca::BasketDiff<
+        FitAPSS,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::OrientedSphereDer,
+        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+
+using FitASO = FitAPSS;
+using FitASODiff = Ponca::BasketDiff<
+        FitASO,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
+        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+
 /// Compute curvature using Covariance Plane fitting
 /// \see estimateDifferentialQuantities_impl
 void estimateDifferentialQuantitiesWithPlane() {
-    estimateDifferentialQuantities_impl<
-            Ponca::BasketDiff<
-                Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::CovariancePlaneFit>,
-                        Ponca::DiffType::FitSpaceDer,
-                        Ponca::CovariancePlaneDer,
-                        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>>("PSS");
+    estimateDifferentialQuantities_impl<FitPlaneDiff>("PSS");
 }
 
 /// Compute curvature using APSS
 /// \see estimateDifferentialQuantities_impl
-void estimateDifferentialQuantitiesWithAPSS() {
-    estimateDifferentialQuantities_impl<
-            Ponca::BasketDiff<
-                    Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>,
-                    Ponca::DiffType::FitSpaceDer,
-                    Ponca::OrientedSphereDer,
-                    Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>>("APSS");
+inline void estimateDifferentialQuantitiesWithAPSS() {
+    estimateDifferentialQuantities_impl<FitAPSSDiff>("APSS");
 }
 
 /// Compute curvature using Algebraic Shape Operator
 /// \see estimateDifferentialQuantities_impl
-void estimateDifferentialQuantitiesWithASO() {
-    estimateDifferentialQuantities_impl<
-            Ponca::BasketDiff<
-                    Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>,
-                    Ponca::DiffType::FitSpaceDer,
-                    Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
-                    Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>>("ASO");
+inline void estimateDifferentialQuantitiesWithASO() {
+    estimateDifferentialQuantities_impl<FitASODiff>("ASO");
 }
 
 /// Dry run: loop over all vertices + run MLS loops without computation
 /// This function is useful to monitor the KdTree performances
-void mlsDryRun() {
-    using DryFit = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::DryFit>;
+inline void mlsDryRun() {
     measureTime( "[Ponca] Dry run MLS ", []() {
-                     processPointCloud<DryFit>(
-                             SmoothWeightFunc(NSize), [](int, const DryFit&, const VectorType& ){ });
+                     processPointCloud<FitDry>(
+                             SmoothWeightFunc(NSize), [](int, const FitDry&, const VectorType& ){ });
     });
 }
 
+///Evaluate scalar field for generic FitType.
+///// \tparam FitT Defines the type of estimator used for computation
+template<typename FitT, bool isSigned = true>
+Scalar evalScalarField_impl(const VectorType& input_pos)
+{
+    VectorType current_pos = input_pos;
+    Scalar current_value = std::numeric_limits<Scalar>::max();
+    for(int mm = 0; mm < mlsIter; ++mm)
+    {
+            FitT fit;
+            fit.setWeightFunc(SmoothWeightFunc(NSize));
+            fit.init(current_pos); // weighting function using current pos (not input pos)
+            auto res = fit.computeWithIds(tree.range_neighbors(current_pos, NSize), tree.point_data());
+            if(res == Ponca::STABLE) {
+            current_pos = fit.project(input_pos); // always project input pos
+            current_value = isSigned ? fit.potential(input_pos) : std::abs(fit.potential(input_pos));
+            // current_gradient = fit.primitiveGradient(input_pos);
+        } else {
+            // not enough neighbors (if far from the point cloud)
+            return .0;//std::numeric_limits<Scalar>::max();
+        }
+    }
+    return current_value;
+}
 
 /// Define Polyscope callbacks
 void callback() {
@@ -253,13 +289,34 @@ void callback() {
     if (ImGui::Button("APSS")) estimateDifferentialQuantitiesWithAPSS();
     ImGui::SameLine();
     if (ImGui::Button("ASO")) estimateDifferentialQuantitiesWithASO();
-
+    
+    ImGui::Separator();
+  
+    ImGui::Text("Implicit function slicer");
+    ImGui::SliderFloat("Slice", &slice, 0, 1.0); ImGui::SameLine();
+    ImGui::Checkbox("HD", &isHDSlicer);
+    ImGui::RadioButton("X axis", &axis, 0); ImGui::SameLine();
+    ImGui::RadioButton("Y axis", &axis, 1); ImGui::SameLine();
+    ImGui::RadioButton("Z axis", &axis, 2);
+    const char* items[] = { "ASO", "APSS", "PSS"};
+    static int item_current = 0;
+    ImGui::Combo("Fit function", &item_current, items, IM_ARRAYSIZE(items));
+    if (ImGui::Button("Update"))
+    {
+      switch(item_current)
+      {
+        case 0: registerRegularSlicer("slicer", evalScalarField_impl<FitASO, true>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
+        case 1: registerRegularSlicer("slicer", evalScalarField_impl<FitAPSS, true>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
+        case 2: registerRegularSlicer("slicer", evalScalarField_impl<FitPlane, false>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
+      }
+    }
+    ImGui::SameLine();
     ImGui::PopItemWidth();
 }
 
 int main(int argc, char **argv) {
     // Options
-    polyscope::options::autocenterStructures = true;
+    polyscope::options::autocenterStructures = false;
     polyscope::options::programName = "poncascope";
     polyscope::view::windowWidth = 1024;
     polyscope::view::windowHeight = 1024;
@@ -284,6 +341,10 @@ int main(int argc, char **argv) {
         return EXIT_FAILURE;
     }
 
+    //Bounding Box (used in the slicer)
+    lower = cloudV.colwise().minCoeff();
+    upper = cloudV.colwise().maxCoeff();
+  
     // Build Ponca KdTree
     measureTime( "[Ponca] Build KdTree", []() {
         buildKdTree(cloudV, cloudN, tree);
