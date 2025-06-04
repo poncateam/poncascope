@@ -18,7 +18,7 @@
 using Scalar             = double;
 using VectorType         = Eigen::Vector<Scalar, 3>;
 using PPAdapter          = BlockPointAdapter<Scalar>;
-using KdTree             = Ponca::KdTree<PPAdapter>;
+using KdTree             = Ponca::KdTreeSparse<PPAdapter>;
 using KnnGraph           = Ponca::KnnGraph<PPAdapter>;
 using SmoothWeightFunc   = Ponca::DistWeightFunc<PPAdapter, Ponca::SmoothWeightKernel<Scalar> >;
 //using SmoothWeightFunc   = Ponca::DistWeightFunc<PPAdapter, Ponca::ExpWeightKernel<Scalar> >;
@@ -72,7 +72,7 @@ void processRangeNeighbors(int i, Functor f){
 
 /// Show in polyscope the euclidean neighborhood of the selected point (iVertexSource), with smooth weighting function
 void colorizeEuclideanNeighborhood() {
-    int nvert = tree.index_data().size();
+    int nvert = tree.samples().size();
     Eigen::VectorXd closest ( nvert );
     closest.setZero();
 
@@ -82,9 +82,9 @@ void colorizeEuclideanNeighborhood() {
     SmoothWeightFunc w(NSize );
 
     closest(iVertexSource) = 2;
-    const auto &p = tree.point_data()[iVertexSource];
+    const auto &p = tree.points()[iVertexSource];
     processRangeNeighbors(iVertexSource, [w,p,&closest](int j){
-        const auto &q = tree.point_data()[j];
+        const auto &q = tree.points()[j];
         closest(j) = w.w( q.pos() - p.pos(), q ).first;
     });
 
@@ -103,7 +103,7 @@ void recomputeKnnGraph() {
 
 /// Show in polyscope the knn neighborhood of the selected point (iVertexSource)
 void colorizeKnn() {
-    int nvert = tree.index_data().size();
+    int nvert = tree.samples().size();
     Eigen::VectorXd closest ( nvert );
     closest.setZero();
 
@@ -119,8 +119,8 @@ void colorizeKnn() {
 template<typename FitT, typename Functor>
 void processPointCloud(const typename FitT::WeightFunction& w, Functor f){
 #pragma omp parallel for
-    for (int i = 0; i < tree.index_data().size(); ++i) {
-        VectorType pos = tree.point_data()[i].pos();
+    for (int i = 0; i < tree.samples().size(); ++i) {
+        VectorType pos = tree.points()[i].pos();
 
         for( int mm = 0; mm < mlsIter; ++mm) {
             FitT fit;
@@ -128,7 +128,7 @@ void processPointCloud(const typename FitT::WeightFunction& w, Functor f){
             fit.init( pos );
 
             processRangeNeighbors(i, [&fit](int j){
-                fit.addNeighbor(tree.point_data()[j]);
+                fit.addNeighbor(tree.points()[j]);
             });
 
             if (fit.finalize() == Ponca::STABLE){
@@ -148,7 +148,7 @@ void processPointCloud(const typename FitT::WeightFunction& w, Functor f){
 /// \tparam FitT Defines the type of estimator used for computation
 template<typename FitT>
 void estimateDifferentialQuantities_impl(const std::string& name) {
-    int nvert = tree.index_data().size();
+    int nvert = tree.samples().size();
     Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
     Eigen::MatrixXd normal( nvert, 3 ), dmin( nvert, 3 ), dmax( nvert, 3 ), proj( nvert, 3 );
 
@@ -166,7 +166,7 @@ void estimateDifferentialQuantities_impl(const std::string& name) {
             dmin.row( i )   = fit.kminDirection();
             dmax.row( i )   = fit.kmaxDirection();
 
-            proj.row( i )   = mlsPos - tree.point_data()[i].pos();
+            proj.row( i )   = mlsPos - tree.points()[i].pos();
         });
     });
 
@@ -248,7 +248,7 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
             FitT fit;
             fit.setWeightFunc(SmoothWeightFunc(NSize));
             fit.init(current_pos); // weighting function using current pos (not input pos)
-            auto res = fit.computeWithIds(tree.range_neighbors(current_pos, NSize), tree.point_data());
+            auto res = fit.computeWithIds(tree.range_neighbors(current_pos, NSize), tree.points());
             if(res == Ponca::STABLE) {
             current_pos = fit.project(input_pos); // always project input pos
             current_value = isSigned ? fit.potential(input_pos) : std::abs(fit.potential(input_pos));
