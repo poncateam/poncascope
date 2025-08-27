@@ -226,6 +226,40 @@ void estimateDifferentialQuantities_impl(const std::string& name) {
                      cloud->addVectorQuantity(name + " - projection", proj, polyscope::VectorType::AMBIENT);
                  });
 }
+// Specialization for CNC fit
+template<>
+void estimateDifferentialQuantities_impl<FitCNC>(const std::string& name) {
+    int nvert = tree.samples().size();
+    Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
+    Eigen::MatrixXd dmin( nvert, 3 ), dmax( nvert, 3 );
+
+    measureTime( "[Ponca] Compute differential quantities using " + name,
+                 [&mean, &kmin, &kmax, &dmin, &dmax]() {
+        processPointCloud<FitCNC>(NSize,
+                                [&mean, &kmin, &kmax, &dmin, &dmax]
+                                ( int i, const FitCNC& fit, const VectorType& mlsPos){
+
+            mean(i) = fit.kMean();
+            kmax(i) = fit.kmax();
+            kmin(i) = fit.kmin();
+
+            dmin.row( i )   = fit.kminDirection();
+            dmax.row( i )   = fit.kmaxDirection();
+        });
+    });
+
+    measureTime( "[Polyscope] Update differential quantities",
+                 [&name, &mean, &kmin, &kmax, &dmin, &dmax]() {
+                     cloud->addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
+                     cloud->addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
+                     cloud->addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
+
+                     cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
+                             Scalar(2) * pointRadius);
+                     cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
+                             Scalar(2) * pointRadius);
+                 });
+}
 
 /// Compute curvature using Covariance Plane fitting
 /// \see estimateDifferentialQuantities_impl
