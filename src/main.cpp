@@ -9,6 +9,7 @@
 #include <Ponca/SpatialPartitioning>
 #include "poncaAdapters.hpp"
 #include "polyscopeSlicer.hpp"
+#include <Ponca/src/Fitting/cnc.h>
 
 #include <iostream>
 #include <utility>
@@ -119,6 +120,46 @@ void colorizeKnn() {
     });
     cloud->addScalarQuantity(  "knn neighborhood", closest);
 }
+using FitDry = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::DryFit>;
+
+using FitPlane = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::CovariancePlaneFit>;
+using FitPlaneDiff = Ponca::BasketDiff<
+        FitPlane,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::CovariancePlaneDer,
+        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+
+using FitAPSS = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>;
+using FitAPSSDiff = Ponca::BasketDiff<
+        FitAPSS,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::OrientedSphereDer,
+        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+
+using FitASO = FitAPSS;
+using FitASODiff = Ponca::BasketDiff<
+        FitASO,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
+        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+
+using FitASODiff = Ponca::BasketDiff<
+        FitASO,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
+        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+using FitCNC = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::HexagramGeneration>;
+
+// Fit adapter functions
+template<typename FitType>
+void fitSetUp(FitType& fit, const typename FitType::DataPoint& point, typename FitType::Scalar analysisScale) {
+        fit.setWeightFunc({point.pos(), analysisScale});
+}
+// Specialization for CNC fit
+template<>
+void fitSetUp<FitCNC>(FitCNC& fit, const FitCNC::DataPoint& point, FitCNC::Scalar  /*analysisScale*/) {
+        fit.setEvalPoint(point);
+}
 
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
@@ -187,29 +228,6 @@ void estimateDifferentialQuantities_impl(const std::string& name) {
                  });
 }
 
-using FitDry = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::DryFit>;
-
-using FitPlane = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::CovariancePlaneFit>;
-using FitPlaneDiff = Ponca::BasketDiff<
-        FitPlane,
-        Ponca::DiffType::FitSpaceDer,
-        Ponca::CovariancePlaneDer,
-        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
-
-using FitAPSS = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>;
-using FitAPSSDiff = Ponca::BasketDiff<
-        FitAPSS,
-        Ponca::DiffType::FitSpaceDer,
-        Ponca::OrientedSphereDer,
-        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
-
-using FitASO = FitAPSS;
-using FitASODiff = Ponca::BasketDiff<
-        FitASO,
-        Ponca::DiffType::FitSpaceDer,
-        Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
-        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
-
 /// Compute curvature using Covariance Plane fitting
 /// \see estimateDifferentialQuantities_impl
 void estimateDifferentialQuantitiesWithPlane() {
@@ -226,6 +244,11 @@ inline void estimateDifferentialQuantitiesWithAPSS() {
 /// \see estimateDifferentialQuantities_impl
 inline void estimateDifferentialQuantitiesWithASO() {
     estimateDifferentialQuantities_impl<FitASODiff>("ASO");
+}
+/// Compute curvature using Algebraic Shape Operator
+/// \see estimateDifferentialQuantities_impl
+inline void estimateDifferentialQuantitiesWithCNC() {
+    estimateDifferentialQuantities_impl<FitCNC>("CNC");
 }
 
 /// Dry run: loop over all vertices + run MLS loops without computation
@@ -284,7 +307,9 @@ void callback() {
     if (ImGui::Button("APSS")) estimateDifferentialQuantitiesWithAPSS();
     ImGui::SameLine();
     if (ImGui::Button("ASO")) estimateDifferentialQuantitiesWithASO();
-    
+    ImGui::SameLine();
+    if (ImGui::Button("CNC")) estimateDifferentialQuantitiesWithCNC();
+
     ImGui::Separator();
   
     ImGui::Text("Implicit function slicer");
