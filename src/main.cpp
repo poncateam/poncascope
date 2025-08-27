@@ -9,6 +9,7 @@
 #include <Ponca/SpatialPartitioning>
 #include "poncaAdapters.hpp"
 #include "polyscopeSlicer.hpp"
+#include <Ponca/src/Fitting/cnc.h>
 
 #include <iostream>
 #include <utility>
@@ -79,7 +80,7 @@ void colorizeEuclideanNeighborhood() {
     delete knnGraph;
     knnGraph = new KnnGraph (tree, kNN);
 
-    SmoothWeightFunc w(NSize );
+    SmoothWeightFunc w(VectorType::Zero(), NSize );
 
     closest(iVertexSource) = 2;
     const auto &p = tree.points()[iVertexSource];
@@ -113,25 +114,66 @@ void colorizeKnn() {
     });
     cloud->addScalarQuantity(  "knn neighborhood", closest);
 }
+using FitDry = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::DryFit>;
+
+using FitPlane = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::CovariancePlaneFit>;
+using FitPlaneDiff = Ponca::BasketDiff<
+        FitPlane,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::CovariancePlaneDer,
+        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+
+using FitAPSS = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>;
+using FitAPSSDiff = Ponca::BasketDiff<
+        FitAPSS,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::OrientedSphereDer,
+        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+
+using FitASO = FitAPSS;
+using FitASODiff = Ponca::BasketDiff<
+        FitASO,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
+        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+
+using FitASODiff = Ponca::BasketDiff<
+        FitASO,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
+        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+using FitCNC = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::HexagramGeneration>;
+
+// Fit adapter functions
+template<typename FitType>
+void fitSetUp(FitType& fit, const typename FitType::DataPoint& point, typename FitType::Scalar analysisScale) {
+        fit.setWeightFunc({point.pos(), analysisScale});
+}
+// Specialization for CNC fit
+template<>
+void fitSetUp<FitCNC>(FitCNC& fit, const FitCNC::DataPoint& point, FitCNC::Scalar  /*analysisScale*/) {
+        fit.setEvalPoint(point);
+}
 
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
 template<typename FitT, typename Functor>
-void processPointCloud(const typename FitT::WeightFunction& w, Functor f){
+void processPointCloud(const float t, Functor f){
 #pragma omp parallel for
     for (int i = 0; i < tree.samples().size(); ++i) {
         VectorType pos = tree.points()[i].pos();
 
         for( int mm = 0; mm < mlsIter; ++mm) {
             FitT fit;
-            fit.setWeightFunc(w);
-            fit.init( pos );
+            fitSetUp(fit, tree.points()[i], t);
 
-            processRangeNeighbors(i, [&fit](int j){
-                fit.addNeighbor(tree.points()[j]);
+            std::vector<int> pointsIndex;
+            processRangeNeighbors(i, [&pointsIndex](int j){
+                pointsIndex.push_back(j);
             });
 
-            if (fit.finalize() == Ponca::STABLE){
+            const auto res = fit.computeWithIds(pointsIndex, tree.points()); // Uses computeWithIds for CNC Fit compatibility
+            if (res == Ponca::STABLE){
                 pos = fit.project( pos );
                 if ( mm == mlsIter -1 ) // last mls step, calling functor
                     f(i, fit, pos);
@@ -154,7 +196,7 @@ void estimateDifferentialQuantities_impl(const std::string& name) {
 
     measureTime( "[Ponca] Compute differential quantities using " + name,
                  [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]() {
-        processPointCloud<FitT>(SmoothWeightFunc(NSize),
+        processPointCloud<FitT>(NSize,
                                 [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]
                                 ( int i, const FitT& fit, const VectorType& mlsPos){
 
@@ -186,29 +228,6 @@ void estimateDifferentialQuantities_impl(const std::string& name) {
                  });
 }
 
-using FitDry = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::DryFit>;
-
-using FitPlane = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::CovariancePlaneFit>;
-using FitPlaneDiff = Ponca::BasketDiff<
-        FitPlane,
-        Ponca::DiffType::FitSpaceDer,
-        Ponca::CovariancePlaneDer,
-        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
-
-using FitAPSS = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>;
-using FitAPSSDiff = Ponca::BasketDiff<
-        FitAPSS,
-        Ponca::DiffType::FitSpaceDer,
-        Ponca::OrientedSphereDer,
-        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
-
-using FitASO = FitAPSS;
-using FitASODiff = Ponca::BasketDiff<
-        FitASO,
-        Ponca::DiffType::FitSpaceDer,
-        Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
-        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
-
 /// Compute curvature using Covariance Plane fitting
 /// \see estimateDifferentialQuantities_impl
 void estimateDifferentialQuantitiesWithPlane() {
@@ -226,13 +245,17 @@ inline void estimateDifferentialQuantitiesWithAPSS() {
 inline void estimateDifferentialQuantitiesWithASO() {
     estimateDifferentialQuantities_impl<FitASODiff>("ASO");
 }
+/// Compute curvature using Algebraic Shape Operator
+/// \see estimateDifferentialQuantities_impl
+inline void estimateDifferentialQuantitiesWithCNC() {
+    estimateDifferentialQuantities_impl<FitCNC>("CNC");
+}
 
 /// Dry run: loop over all vertices + run MLS loops without computation
 /// This function is useful to monitor the KdTree performances
 inline void mlsDryRun() {
     measureTime( "[Ponca] Dry run MLS ", []() {
-                     processPointCloud<FitDry>(
-                             SmoothWeightFunc(NSize), [](int, const FitDry&, const VectorType& ){ });
+                     processPointCloud<FitDry>(NSize, [](int, const FitDry&, const VectorType& ){ });
     });
 }
 
@@ -245,9 +268,8 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
     Scalar current_value = std::numeric_limits<Scalar>::max();
     for(int mm = 0; mm < mlsIter; ++mm)
     {
-            FitT fit;
-            fit.setWeightFunc(SmoothWeightFunc(NSize));
-            fit.init(current_pos); // weighting function using current pos (not input pos)
+        FitT fit;
+        fit.setWeightFunc({current_pos, NSize});
             auto res = fit.computeWithIds(tree.range_neighbors(current_pos, NSize), tree.points());
             if(res == Ponca::STABLE) {
             current_pos = fit.project(input_pos); // always project input pos
@@ -289,6 +311,8 @@ void callback() {
     if (ImGui::Button("APSS")) estimateDifferentialQuantitiesWithAPSS();
     ImGui::SameLine();
     if (ImGui::Button("ASO")) estimateDifferentialQuantitiesWithASO();
+    ImGui::SameLine();
+    if (ImGui::Button("CNC")) estimateDifferentialQuantitiesWithCNC();
     
     ImGui::Separator();
   
