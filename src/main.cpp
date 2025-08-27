@@ -7,9 +7,10 @@
 
 #include <Ponca/Fitting>
 #include <Ponca/SpatialPartitioning>
+#include <Ponca/src/Fitting/cnc.h>
 #include "poncaAdapters.hpp"
 #include "polyscopeSlicer.hpp"
-#include <Ponca/src/Fitting/cnc.h>
+
 
 #include <iostream>
 #include <utility>
@@ -146,13 +147,13 @@ using FitCNC = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::HexagramGe
 
 // Fit adapter functions
 template<typename FitType>
-void fitSetUp(FitType& fit, const typename FitType::DataPoint& point, typename FitType::Scalar analysisScale) {
-        fit.setWeightFunc({point.pos(), analysisScale});
+PONCA_MULTIARCH inline void fitSetUp(FitType& fit, const typename FitType::VectorType& evalPointPos, const typename FitType::VectorType& /*evalPointNormal*/, typename FitType::Scalar analysisScale) {
+    fit.setWeightFunc({evalPointPos, analysisScale});
 }
 // Specialization for CNC fit
 template<>
-void fitSetUp<FitCNC>(FitCNC& fit, const FitCNC::DataPoint& point, FitCNC::Scalar  /*analysisScale*/) {
-        fit.setEvalPoint(point);
+inline void fitSetUp<FitCNC>(FitCNC& fit, const FitCNC::VectorType& evalPointPos, const FitCNC::VectorType& evalPointNormal, FitCNC::Scalar /*analysisScale*/) {
+    fit.setEvalPoint(evalPointNormal, evalPointPos);
 }
 
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
@@ -162,23 +163,21 @@ void processPointCloud(const typename FitT::Scalar t, Functor f){
 #pragma omp parallel for
     for (int i = 0; i < tree.samples().size(); ++i) {
         VectorType pos = tree.points()[i].pos();
-
         for( int mm = 0; mm < mlsIter; ++mm) {
             FitT fit;
-            fitSetUp(fit, tree.points()[i], t);
+            fitSetUp(fit, pos, tree.points()[i].normal(), t);
 
-            std::vector<int> pointsIndex;
-            processRangeNeighbors(i, [&pointsIndex](int j){
-                pointsIndex.push_back(j);
+            std::vector<int> neighborhoodIndices;
+            processRangeNeighbors(i, [&neighborhoodIndices](int j){
+                    neighborhoodIndices.push_back(j);
             });
 
-            const auto res = fit.computeWithIds(pointsIndex, tree.points()); // Uses computeWithIds for CNC Fit compatibility
+            const auto res = fit.computeWithIds(neighborhoodIndices, tree.points()); // Uses computeWithIds for CNC Fit compatibility
             if (res == Ponca::STABLE){
                 pos = fit.project( pos );
                 if ( mm == mlsIter -1 ) // last mls step, calling functor
                     f(i, fit, pos);
-            }
-            else {
+            } else {
                 std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
                 break;
             }
@@ -245,8 +244,6 @@ inline void estimateDifferentialQuantitiesWithAPSS() {
 inline void estimateDifferentialQuantitiesWithASO() {
     estimateDifferentialQuantities_impl<FitASODiff>("ASO");
 }
-/// Compute curvature using Algebraic Shape Operator
-/// \see estimateDifferentialQuantities_impl
 inline void estimateDifferentialQuantitiesWithCNC() {
     estimateDifferentialQuantities_impl<FitCNC>("CNC");
 }
@@ -315,7 +312,7 @@ void callback() {
     if (ImGui::Button("CNC")) estimateDifferentialQuantitiesWithCNC();
 
     ImGui::Separator();
-  
+
     ImGui::Text("Implicit function slicer");
     ImGui::SliderFloat("Slice", &slice, 0, 1.0); ImGui::SameLine();
     ImGui::Checkbox("HD", &isHDSlicer);
@@ -368,7 +365,7 @@ int main(int argc, char **argv) {
     //Bounding Box (used in the slicer)
     lower = cloudV.colwise().minCoeff();
     upper = cloudV.colwise().maxCoeff();
-  
+
     // Build Ponca KdTree
     measureTime( "[Ponca] Build KdTree", []() {
         buildKdTree(cloudV, cloudN, tree);
