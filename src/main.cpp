@@ -147,12 +147,12 @@ using FitCNC = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::HexagramGe
 
 // Fit adapter functions
 template<typename FitType>
-PONCA_MULTIARCH inline void fitSetUp(FitType& fit, const typename FitType::VectorType& evalPointPos, const typename FitType::VectorType& /*evalPointNormal*/, typename FitType::Scalar analysisScale) {
+void fitSetUp(FitType& fit, const typename FitType::VectorType& evalPointPos, const typename FitType::VectorType& /*evalPointNormal*/, typename FitType::Scalar analysisScale) {
     fit.setWeightFunc({evalPointPos, analysisScale});
 }
 // Specialization for CNC fit
 template<>
-inline void fitSetUp<FitCNC>(FitCNC& fit, const FitCNC::VectorType& evalPointPos, const FitCNC::VectorType& evalPointNormal, FitCNC::Scalar /*analysisScale*/) {
+void fitSetUp<FitCNC>(FitCNC& fit, const FitCNC::VectorType& evalPointPos, const FitCNC::VectorType& evalPointNormal, FitCNC::Scalar /*analysisScale*/) {
     fit.setEvalPoint(evalPointNormal, evalPointPos);
 }
 
