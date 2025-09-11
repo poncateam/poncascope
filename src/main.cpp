@@ -13,6 +13,7 @@
 #include <iostream>
 #include <utility>
 #include <chrono>
+#include <variant>
 
 // Types definition
 using Scalar             = double;
@@ -70,6 +71,20 @@ void processRangeNeighbors(int i, Functor f){
         }
 }
 
+/// Dispatch the Iterator types using std::variant
+using RangeVariant = std::variant<
+    decltype(tree.range_neighbors(0, NSize)),
+    decltype(knnGraph->range_neighbors(0, NSize))
+>;
+
+/// Retreives the neighborhood of i depending if we use the KnnGraph or the KdTree
+RangeVariant getRangeVariant(const int i) {
+    if (useKnnGraph)
+        return knnGraph->range_neighbors(i, NSize);
+    else
+        return tree.range_neighbors(i, NSize);
+}
+
 /// Show in polyscope the euclidean neighborhood of the selected point (iVertexSource), with smooth weighting function
 void colorizeEuclideanNeighborhood() {
     int nvert = tree.samples().size();
@@ -79,7 +94,7 @@ void colorizeEuclideanNeighborhood() {
     delete knnGraph;
     knnGraph = new KnnGraph (tree, kNN);
 
-    SmoothWeightFunc w(NSize );
+    SmoothWeightFunc w(VectorType::Zero(), NSize );
 
     closest(iVertexSource) = 2;
     const auto &p = tree.points()[iVertexSource];
@@ -117,29 +132,24 @@ void colorizeKnn() {
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
 template<typename FitT, typename Functor>
-void processPointCloud(const typename FitT::WeightFunction& w, Functor f){
+void processPointCloud(const typename FitT::Scalar t, Functor f){
 #pragma omp parallel for
     for (int i = 0; i < tree.samples().size(); ++i) {
         VectorType pos = tree.points()[i].pos();
 
-        for( int mm = 0; mm < mlsIter; ++mm) {
-            FitT fit;
-            fit.setWeightFunc(w);
-            fit.init( pos );
+        FitT fit;
+        fit.setWeightFunc({pos, t});
 
-            processRangeNeighbors(i, [&fit](int j){
-                fit.addNeighbor(tree.points()[j]);
-            });
+        std::visit([&](const auto& range){
+            fit.computeWithIdsMLS(range, tree.points(), mlsIter);
+        }, getRangeVariant(i));
 
-            if (fit.finalize() == Ponca::STABLE){
-                pos = fit.project( pos );
-                if ( mm == mlsIter -1 ) // last mls step, calling functor
-                    f(i, fit, pos);
-            }
-            else {
-                std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
-                break;
-            }
+        const VectorType projectedPos = fit.getWeightFunc().evalPos();
+
+        if (fit.isStable()){
+            f(i, fit, projectedPos);
+        } else {
+            std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
         }
     }
 }
@@ -154,7 +164,7 @@ void estimateDifferentialQuantities_impl(const std::string& name) {
 
     measureTime( "[Ponca] Compute differential quantities using " + name,
                  [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]() {
-        processPointCloud<FitT>(SmoothWeightFunc(NSize),
+        processPointCloud<FitT>(NSize,
                                 [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]
                                 ( int i, const FitT& fit, const VectorType& mlsPos){
 
@@ -231,8 +241,7 @@ inline void estimateDifferentialQuantitiesWithASO() {
 /// This function is useful to monitor the KdTree performances
 inline void mlsDryRun() {
     measureTime( "[Ponca] Dry run MLS ", []() {
-                     processPointCloud<FitDry>(
-                             SmoothWeightFunc(NSize), [](int, const FitDry&, const VectorType& ){ });
+        processPointCloud<FitDry>( NSize, [](int, const FitDry&, const VectorType& ){ });
     });
 }
 
@@ -246,8 +255,7 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
     for(int mm = 0; mm < mlsIter; ++mm)
     {
             FitT fit;
-            fit.setWeightFunc(SmoothWeightFunc(NSize));
-            fit.init(current_pos); // weighting function using current pos (not input pos)
+            fit.setWeightFunc({current_pos, NSize}); // weighting function using current pos (not input pos)
             auto res = fit.computeWithIds(tree.range_neighbors(current_pos, NSize), tree.points());
             if(res == Ponca::STABLE) {
             current_pos = fit.project(input_pos); // always project input pos
