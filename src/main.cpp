@@ -13,6 +13,7 @@
 #include <iostream>
 #include <utility>
 #include <chrono>
+#include <variant>
 
 // Types definition
 using Scalar             = double;
@@ -70,6 +71,20 @@ void processRangeNeighbors(int i, Functor f){
         }
 }
 
+/// Dispatch the Iterator types using std::variant
+using RangeVariant = std::variant<
+    decltype(tree.range_neighbors(0, NSize)),
+    decltype(knnGraph->range_neighbors(0, NSize))
+>;
+
+/// Retreives the neighborhood of i depending if we use the KnnGraph or the KdTree
+RangeVariant getRangeVariant(const int i) {
+    if (useKnnGraph)
+        return knnGraph->range_neighbors(i, NSize);
+    else
+        return tree.range_neighbors(i, NSize);
+}
+
 /// Show in polyscope the euclidean neighborhood of the selected point (iVertexSource), with smooth weighting function
 void colorizeEuclideanNeighborhood() {
     int nvert = tree.samples().size();
@@ -122,24 +137,19 @@ void processPointCloud(const typename FitT::Scalar t, Functor f){
     for (int i = 0; i < tree.samples().size(); ++i) {
         VectorType pos = tree.points()[i].pos();
 
-        for( int mm = 0; mm < mlsIter; ++mm) {
-            FitT fit;
-            fit.setWeightFunc({pos, t});
-            fit.init();
+        FitT fit;
+        fit.setWeightFunc({pos, t});
 
-            processRangeNeighbors(i, [&fit](int j){
-                fit.addNeighbor(tree.points()[j]);
-            });
+        std::visit([&](const auto& range){
+            fit.computeWithIdsMLS(range, tree.points(), mlsIter);
+        }, getRangeVariant(i));
 
-            if (fit.finalize() == Ponca::STABLE){
-                pos = fit.project( pos );
-                if ( mm == mlsIter -1 ) // last mls step, calling functor
-                    f(i, fit, pos);
-            }
-            else {
-                std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
-                break;
-            }
+        const VectorType projectedPos = fit.getWeightFunc().evalPos();
+
+        if (fit.isStable()){
+            f(i, fit, projectedPos);
+        } else {
+            std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
         }
     }
 }
