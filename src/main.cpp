@@ -79,7 +79,7 @@ void colorizeEuclideanNeighborhood() {
     delete knnGraph;
     knnGraph = new KnnGraph (tree, kNN);
 
-    SmoothWeightFunc w(NSize );
+    SmoothWeightFunc w(VectorType::Zero(), NSize );
 
     closest(iVertexSource) = 2;
     const auto &p = tree.points()[iVertexSource];
@@ -117,15 +117,15 @@ void colorizeKnn() {
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
 template<typename FitT, typename Functor>
-void processPointCloud(const typename FitT::WeightFunction& w, Functor f){
+void processPointCloud(const typename FitT::Scalar t, Functor f){
 #pragma omp parallel for
     for (int i = 0; i < tree.samples().size(); ++i) {
         VectorType pos = tree.points()[i].pos();
 
         for( int mm = 0; mm < mlsIter; ++mm) {
             FitT fit;
-            fit.setWeightFunc(w);
-            fit.init( pos );
+            fit.setWeightFunc({pos, t});
+            fit.init();
 
             processRangeNeighbors(i, [&fit](int j){
                 fit.addNeighbor(tree.points()[j]);
@@ -154,7 +154,7 @@ void estimateDifferentialQuantities_impl(const std::string& name) {
 
     measureTime( "[Ponca] Compute differential quantities using " + name,
                  [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]() {
-        processPointCloud<FitT>(SmoothWeightFunc(NSize),
+        processPointCloud<FitT>(NSize,
                                 [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]
                                 ( int i, const FitT& fit, const VectorType& mlsPos){
 
@@ -231,8 +231,7 @@ inline void estimateDifferentialQuantitiesWithASO() {
 /// This function is useful to monitor the KdTree performances
 inline void mlsDryRun() {
     measureTime( "[Ponca] Dry run MLS ", []() {
-                     processPointCloud<FitDry>(
-                             SmoothWeightFunc(NSize), [](int, const FitDry&, const VectorType& ){ });
+        processPointCloud<FitDry>( NSize, [](int, const FitDry&, const VectorType& ){ });
     });
 }
 
@@ -246,8 +245,7 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
     for(int mm = 0; mm < mlsIter; ++mm)
     {
             FitT fit;
-            fit.setWeightFunc(SmoothWeightFunc(NSize));
-            fit.init(current_pos); // weighting function using current pos (not input pos)
+            fit.setWeightFunc({current_pos, NSize}); // weighting function using current pos (not input pos)
             auto res = fit.computeWithIds(tree.range_neighbors(current_pos, NSize), tree.points());
             if(res == Ponca::STABLE) {
             current_pos = fit.project(input_pos); // always project input pos
