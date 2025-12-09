@@ -165,9 +165,9 @@ void processPointCloud(const Scalar t, const int indexEvalPoint) {
     FitT fit;
     VectorType pos = tree.points()[indexEvalPoint].pos();
     if constexpr (is_cnc_fit<FitT>::value)
-        fit.setEvalPoint(tree.points()[indexEvalPoint].normal(), pos);
+        fit.setNeighborFilter({ pos, t, tree.points()[indexEvalPoint].normal() });
     else
-        fit.setWeightFunc({pos, t});
+        fit.setNeighborFilter({pos, t});
 
     std::vector<int> neighborhoodIndices;
     processRangeNeighbors(indexEvalPoint, [&neighborhoodIndices](int j){
@@ -187,9 +187,9 @@ void processPointCloudMLS(const typename FitT::Scalar t, Functor f){
         for( int mm = 0; mm < mlsIter; ++mm) {
             FitT fit;
             if constexpr (is_cnc_fit<FitT>::value)
-                fit.setEvalPoint(tree.points()[i].normal(), pos);
+                fit.setNeighborFilter({pos, t, tree.points()[i].normal() });
             else
-                fit.setWeightFunc({pos, t});
+                fit.setNeighborFilter({pos, t});
 
             std::vector<int> neighborhoodIndices;
             processRangeNeighbors(i, [&neighborhoodIndices](int j){
@@ -298,7 +298,7 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
     for(int mm = 0; mm < mlsIter; ++mm)
     {
             FitT fit;
-            fit.setWeightFunc({current_pos, NSize}); // weighting function using current pos (not input pos)
+            fit.setNeighborFilter({current_pos, NSize}); // weighting function using current pos (not input pos)
             auto res = fit.computeWithIds(tree.range_neighbors(current_pos, NSize), tree.points());
             if(res == Ponca::STABLE) {
             current_pos = fit.project(input_pos); // always project input pos
