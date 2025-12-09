@@ -340,7 +340,7 @@ void callback() {
     if (ImGui::Button("APSS")) estimateDifferentialQuantitiesWithAPSS();
     ImGui::SameLine();
     if (ImGui::Button("ASO")) estimateDifferentialQuantitiesWithASO();
-    // ImGui::SameLine();
+    // New line
     if (ImGui::Button("CNC - Uniform"))
         estimateDifferentialQuantities_impl<FitCNCUniform>("CNC - Uniform");
     ImGui::SameLine();
