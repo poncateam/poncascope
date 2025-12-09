@@ -166,23 +166,6 @@ struct is_cnc_fit<FitCNCHex> : std::true_type {};
 template<>
 struct is_cnc_fit<FitCNCAvgHex> : std::true_type {};
 
-template<typename FitT>
-void processPointCloud(const Scalar t, const int indexEvalPoint) {
-    FitT fit;
-    VectorType pos = tree.points()[indexEvalPoint].pos();
-    if constexpr (is_cnc_fit<FitT>::value)
-        fit.setNeighborFilter({ pos, t, tree.points()[indexEvalPoint].normal() });
-    else
-        fit.setNeighborFilter({pos, t});
-
-    std::vector<int> neighborhoodIndices;
-    processRangeNeighbors(indexEvalPoint, [&neighborhoodIndices](int j){
-            neighborhoodIndices.push_back(j);
-    });
-
-    const auto res = fit.computeWithIds(neighborhoodIndices, tree.points()); // Uses computeWithIds for CNC Fit compatibility
-}
-
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
 template<typename FitT, typename Functor>
@@ -282,7 +265,7 @@ inline void estimateDifferentialQuantitiesWithASO() {
 /// This function is useful to monitor the KdTree performances
 inline void mlsDryRun() {
     measureTime( "[Ponca] Dry run MLS ", []() {
-        processPointCloud<FitDry>( NSize, [](int, const FitDry&, const VectorType& ){ });
+        processPointCloudMLS<FitDry>( NSize, [](int, const FitDry&, const VectorType&){ });
     });
 }
 
