@@ -171,9 +171,9 @@ void processPointCloud(const Scalar t, const int indexEvalPoint) {
     FitT fit;
     VectorType pos = tree.points()[indexEvalPoint].pos();
     if constexpr (is_cnc_fit<FitT>::value)
-        fit.setEvalPoint(tree.points()[indexEvalPoint].normal(), pos);
+        fit.setNeighborFilter({ pos, t, tree.points()[indexEvalPoint].normal() });
     else
-        fit.setWeightFunc({pos, t});
+        fit.setNeighborFilter({pos, t});
 
     std::vector<int> neighborhoodIndices;
     processRangeNeighbors(indexEvalPoint, [&neighborhoodIndices](int j){
@@ -291,18 +291,22 @@ inline void mlsDryRun() {
 template<typename FitT, bool isSigned = true>
 Scalar evalScalarField_impl(const VectorType& input_pos)
 {
-    FitT fit;
-    fit.setNeighborFilter({input_pos, NSize}); // weighting function using current pos (not input pos)
-    auto res = fit.computeWithIdsMLS(tree.rangeNeighbors(input_pos, NSize), tree.points(), mlsIter);
-
-    if(!fit.isStable()) {
-        // not enough neighbors (if far from the point cloud)
-        return Scalar(0); //std::numeric_limits<Scalar>::max();
+    VectorType current_pos = input_pos;
+    Scalar current_value = std::numeric_limits<Scalar>::max();
+    for(int mm = 0; mm < mlsIter; ++mm)
+    {
+            FitT fit;
+            fit.setWeightFunc({current_pos, NSize}); // weighting function using current pos (not input pos)
+            auto res = fit.computeWithIds(tree.range_neighbors(current_pos, NSize), tree.points());
+            if(res == Ponca::STABLE) {
+            current_pos = fit.project(input_pos); // always project input pos
+            current_value = isSigned ? fit.potential(input_pos) : std::abs(fit.potential(input_pos));
+            // current_gradient = fit.primitiveGradient(input_pos);
+        } else {
+            // not enough neighbors (if far from the point cloud)
+            return .0;//std::numeric_limits<Scalar>::max();
+        }
     }
-
-    const Scalar current_value = isSigned ? fit.potential(input_pos) : std::abs(fit.potential(input_pos));
-    // current_gradient = fit.primitiveGradient(input_pos);
-
     return current_value;
 }
 
