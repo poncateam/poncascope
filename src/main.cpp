@@ -81,13 +81,13 @@ void colorizeEuclideanNeighborhood() {
     delete knnGraph;
     knnGraph = new KnnGraph (tree, kNN);
 
-    SmoothWeightFunc w(VectorType::Zero(), NSize );
+    const auto &p = tree.points()[iVertexSource];
+    SmoothWeightFunc w(p.pos(), NSize );
 
     closest(iVertexSource) = 2;
-    const auto &p = tree.points()[iVertexSource];
-    processRangeNeighbors(iVertexSource, [w,p,&closest](int j){
+    processRangeNeighbors(iVertexSource, [w,&closest](int j){
         const auto &q = tree.points()[j];
-        closest(j) = w.w( q.pos() - p.pos(), q ).first;
+        closest(j) = w( q ).first;
     });
 
     cloud->addScalarQuantity(  "range neighborhood", closest);
@@ -159,23 +159,6 @@ template<>
 struct is_cnc_fit<FitCNCHex> : std::true_type {};
 template<>
 struct is_cnc_fit<FitCNCAvgHex> : std::true_type {};
-
-template<typename FitT>
-void processPointCloud(const Scalar t, const int indexEvalPoint) {
-    FitT fit;
-    VectorType pos = tree.points()[indexEvalPoint].pos();
-    if constexpr (is_cnc_fit<FitT>::value)
-        fit.setNeighborFilter({ pos, t, tree.points()[indexEvalPoint].normal() });
-    else
-        fit.setNeighborFilter({pos, t});
-
-    std::vector<int> neighborhoodIndices;
-    processRangeNeighbors(indexEvalPoint, [&neighborhoodIndices](int j){
-            neighborhoodIndices.push_back(j);
-    });
-
-    const auto res = fit.computeWithIds(neighborhoodIndices, tree.points()); // Uses computeWithIds for CNC Fit compatibility
-}
 
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
@@ -284,7 +267,7 @@ inline void estimateDifferentialQuantitiesWithASO() {
 /// This function is useful to monitor the KdTree performances
 inline void mlsDryRun() {
     measureTime( "[Ponca] Dry run MLS ", []() {
-        processPointCloud<FitDry>( NSize, [](int, const FitDry&, const VectorType& ){ });
+        processPointCloudMLS<FitDry>( NSize, [](int, const FitDry&, const VectorType&){ });
     });
 }
 
