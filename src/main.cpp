@@ -323,17 +323,18 @@ void callback() {
     if (ImGui::Button("APSS")) estimateDifferentialQuantitiesWithAPSS();
     ImGui::SameLine();
     if (ImGui::Button("ASO")) estimateDifferentialQuantitiesWithASO();
-    // New line
-    if (ImGui::Button("CNC - Uniform"))
+
+    ImGui::Text("Corrected Normal Current estimator");
+    if (ImGui::Button("Uniform"))
         estimateDifferentialQuantities_impl<FitCNCUniform>("CNC - Uniform");
     ImGui::SameLine();
-    if (ImGui::Button("CNC - Independent"))
+    if (ImGui::Button("Independent"))
         estimateDifferentialQuantities_impl<FitCNCIndep>("CNC - Independent");
     ImGui::SameLine();
-    if (ImGui::Button("CNC - Hexagram"))
+    if (ImGui::Button("Hexagram"))
         estimateDifferentialQuantities_impl<FitCNCHex>("CNC - Hexagram");
     ImGui::SameLine();
-    if (ImGui::Button("CNC - AvgHexagram"))
+    if (ImGui::Button("AvgHexagram"))
         estimateDifferentialQuantities_impl<FitCNCAvgHex>("CNC - AvgHexagram");
 
     ImGui::Separator();
