@@ -85,7 +85,7 @@ void colorizeEuclideanNeighborhood() {
     const auto &p = tree.points()[iVertexSource];
     processRangeNeighbors(iVertexSource, [w,p,&closest](int j){
         const auto &q = tree.points()[j];
-        closest(j) = w.w( q.pos() - p.pos(), q ).first;
+        closest(j) = w( q ).first;
     });
 
     cloud->addScalarQuantity(  "range neighborhood", closest);
@@ -116,6 +116,8 @@ void colorizeKnn() {
 
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
+/// \fixme See how to use Basket::computeMLS here. Might need to collect and store a larger neighborhood before the MLS
+///        iterations.
 template<typename FitT, typename Functor>
 void processPointCloud(const typename FitT::Scalar t, Functor f){
 #pragma omp parallel for
@@ -124,7 +126,7 @@ void processPointCloud(const typename FitT::Scalar t, Functor f){
 
         for( int mm = 0; mm < mlsIter; ++mm) {
             FitT fit;
-            fit.setWeightFunc({pos, t});
+            fit.setNeighborFilter({pos, t});
             fit.init();
 
             processRangeNeighbors(i, [&fit](int j){
@@ -245,7 +247,7 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
     for(int mm = 0; mm < mlsIter; ++mm)
     {
             FitT fit;
-            fit.setWeightFunc({current_pos, NSize}); // weighting function using current pos (not input pos)
+            fit.setNeighborFilter({current_pos, NSize}); // weighting function using current pos (not input pos)
             auto res = fit.computeWithIds(tree.range_neighbors(current_pos, NSize), tree.points());
             if(res == Ponca::STABLE) {
             current_pos = fit.project(input_pos); // always project input pos
