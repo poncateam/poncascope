@@ -70,14 +70,11 @@ void doOnRangeNeighbors(const int i, const Functor& f) {
 //! \brief Dispatch a lambda by iterating over each neighbors of a range neighbors query for either the KnnGraph or the KdTree
 template <typename Functor>
 void processRangeNeighbors(const int i, const Functor& f){
-    if(useKnnGraph)
-        for (int j : knnGraph->rangeNeighbors(i, NSize)){
+    doOnRangeNeighbors(i, [&f](auto rangeNeighbors) {
+        for (int j : rangeNeighbors) {
             f(j);
         }
-    else
-        for (int j : tree.rangeNeighbors(i, NSize)){
-            f(j);
-        }
+    });
 }
 
 /// Show in polyscope the euclidean neighborhood of the selected point (iVertexSource), with smooth weighting function
