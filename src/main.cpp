@@ -33,7 +33,7 @@ polyscope::PointCloud* cloud = nullptr;
 int iVertexSource  = 7;     /// < id of the selected point
 int kNN            = 10;    /// < neighborhood size (knn)
 float NSize        = 0.1f;  /// < neighborhood size (euclidean)
-int mlsIter        = 3;     /// < number of moving least squares iterations
+int mlsIter        = 1;     /// < number of moving least squares iterations
 Scalar pointRadius = 0.005; /// < display radius of the point cloud
 bool useKnnGraph   = false; /// < use k-neighbor graph instead of kdtree
 
