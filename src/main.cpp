@@ -58,6 +58,16 @@ void measureTime( const std::string &actionName, Functor F ){
     std::cout << actionName << " in " << (end - start) / 1ms << "ms.\n";
 }
 
+//! \brief Dispatch a lambda on a range neighbors query over either the KnnGraph or the KdTree
+template <typename Functor>
+void doOnRangeNeighbors(const int i, Functor f) {
+    if (useKnnGraph)
+        f(knnGraph->rangeNeighbors(i, NSize));
+    else
+        f(tree.rangeNeighbors(i, NSize));
+}
+
+//! \brief Dispatch a lambda by iterating over each neighbors of a range neighbors query for either the KnnGraph or the KdTree
 template <typename Functor>
 void processRangeNeighbors(int i, Functor f){
     if(useKnnGraph)
@@ -122,24 +132,19 @@ void processPointCloud(const typename FitT::Scalar t, Functor f){
     for (int i = 0; i < tree.samples().size(); ++i) {
         VectorType pos = tree.points()[i].pos();
 
-        for( int mm = 0; mm < mlsIter; ++mm) {
-            FitT fit;
-            fit.setWeightFunc({pos, t});
-            fit.init();
+        FitT fit;
+        fit.setNeighborFilter({pos, t});
 
-            processRangeNeighbors(i, [&fit](int j){
-                fit.addNeighbor(tree.points()[j]);
-            });
+        doOnRangeNeighbors(i, [&](const auto& rangeNeighbors){
+            fit.computeWithIdsMLS(rangeNeighbors, tree.points(), mlsIter);
+        });
 
-            if (fit.finalize() == Ponca::STABLE){
-                pos = fit.project( pos );
-                if ( mm == mlsIter -1 ) // last mls step, calling functor
-                    f(i, fit, pos);
-            }
-            else {
-                std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
-                break;
-            }
+        const auto& projectedPos = static_cast<const FitT&>(fit).getNeighborFilter().evalPos();
+
+        if (fit.isStable()) {
+            f(i, fit, projectedPos);
+        } else {
+            std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
         }
     }
 }
@@ -240,22 +245,18 @@ inline void mlsDryRun() {
 template<typename FitT, bool isSigned = true>
 Scalar evalScalarField_impl(const VectorType& input_pos)
 {
-    VectorType current_pos = input_pos;
-    Scalar current_value = std::numeric_limits<Scalar>::max();
-    for(int mm = 0; mm < mlsIter; ++mm)
-    {
-            FitT fit;
-            fit.setWeightFunc({current_pos, NSize}); // weighting function using current pos (not input pos)
-            auto res = fit.computeWithIds(tree.range_neighbors(current_pos, NSize), tree.points());
-            if(res == Ponca::STABLE) {
-            current_pos = fit.project(input_pos); // always project input pos
-            current_value = isSigned ? fit.potential(input_pos) : std::abs(fit.potential(input_pos));
-            // current_gradient = fit.primitiveGradient(input_pos);
-        } else {
-            // not enough neighbors (if far from the point cloud)
-            return .0;//std::numeric_limits<Scalar>::max();
-        }
+    FitT fit;
+    fit.setNeighborFilter({input_pos, NSize}); // weighting function using current pos (not input pos)
+    auto res = fit.computeWithIdsMLS(tree.rangeNeighbors(input_pos, NSize), tree.points(), mlsIter);
+
+    if(!fit.isStable()) {
+        // not enough neighbors (if far from the point cloud)
+        return Scalar(0); //std::numeric_limits<Scalar>::max();
     }
+
+    Scalar current_value = isSigned ? fit.potential(input_pos) : std::abs(fit.potential(input_pos));
+    // current_gradient = fit.primitiveGradient(input_pos);
+
     return current_value;
 }
 
