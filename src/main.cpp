@@ -32,8 +32,8 @@ polyscope::PointCloud* cloud = nullptr;
 // Options for algorithms
 int iVertexSource  = 7;     /// < id of the selected point
 int kNN            = 10;    /// < neighborhood size (knn)
-float NSize        = 0.1;   /// < neighborhood size (euclidean)
-int mlsIter        = 3;     /// < number of moving least squares iterations
+float NSize        = 0.1f;  /// < neighborhood size (euclidean)
+int mlsIter        = 1;     /// < number of moving least squares iterations
 Scalar pointRadius = 0.005; /// < display radius of the point cloud
 bool useKnnGraph   = false; /// < use k-neighbor graph instead of kdtree
 
@@ -48,31 +48,38 @@ VectorType lower, upper;
 
 /// Convenience function measuring and printing the processing time of F
 template <typename Functor>
-void measureTime( const std::string &actionName, Functor F ){
+void measureTime( const std::string &actionName, const Functor& f){
     using namespace std::literals; // enables the usage of 24h instead of e.g. std::chrono::hours(24)
 
     const std::chrono::time_point<std::chrono::steady_clock> start =
             std::chrono::steady_clock::now();
-    F(); // run process
+    f(); // run process
     const auto end = std::chrono::steady_clock::now();
     std::cout << actionName << " in " << (end - start) / 1ms << "ms.\n";
 }
 
+//! \brief Dispatch a lambda on a range neighbors query over either the KnnGraph or the KdTree
 template <typename Functor>
-void processRangeNeighbors(int i, Functor f){
-    if(useKnnGraph)
-        for (int j : knnGraph->range_neighbors(i, NSize)){
-            f(j);
-        }
+void doOnRangeNeighbors(const int i, const Functor& f) {
+    if (useKnnGraph)
+        f(knnGraph->rangeNeighbors(i, NSize));
     else
-        for (int j : tree.range_neighbors(i, NSize)){
+        f(tree.rangeNeighbors(i, NSize));
+}
+
+//! \brief Dispatch a lambda by iterating over each neighbors of a range neighbors query for either the KnnGraph or the KdTree
+template <typename Functor>
+void processRangeNeighbors(const int i, const Functor& f){
+    doOnRangeNeighbors(i, [&f](auto rangeNeighbors) {
+        for (int j : rangeNeighbors) {
             f(j);
         }
+    });
 }
 
 /// Show in polyscope the euclidean neighborhood of the selected point (iVertexSource), with smooth weighting function
 void colorizeEuclideanNeighborhood() {
-    int nvert = tree.samples().size();
+    int nvert = int(tree.samples().size());
     Eigen::VectorXd closest ( nvert );
     closest.setZero();
 
@@ -82,10 +89,9 @@ void colorizeEuclideanNeighborhood() {
     SmoothWeightFunc w(VectorType::Zero(), NSize );
 
     closest(iVertexSource) = 2;
-    const auto &p = tree.points()[iVertexSource];
-    processRangeNeighbors(iVertexSource, [w,p,&closest](int j){
+    processRangeNeighbors(iVertexSource, [w, &closest](const int j){
         const auto &q = tree.points()[j];
-        closest(j) = w.w( q.pos() - p.pos(), q ).first;
+        closest(j) = w( q ).first;
     });
 
     cloud->addScalarQuantity(  "range neighborhood", closest);
@@ -103,12 +109,12 @@ void recomputeKnnGraph() {
 
 /// Show in polyscope the knn neighborhood of the selected point (iVertexSource)
 void colorizeKnn() {
-    int nvert = tree.samples().size();
+    int nvert = int(tree.samples().size());
     Eigen::VectorXd closest ( nvert );
     closest.setZero();
 
     closest(iVertexSource) = 2;
-    processRangeNeighbors(iVertexSource, [&closest](int j){
+    processRangeNeighbors(iVertexSource, [&closest](const int j){
         closest(j) = 1;
     });
     cloud->addScalarQuantity(  "knn neighborhood", closest);
@@ -117,29 +123,24 @@ void colorizeKnn() {
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
 template<typename FitT, typename Functor>
-void processPointCloud(const typename FitT::Scalar t, Functor f){
+void processPointCloud(const typename FitT::Scalar t, const Functor& f){
 #pragma omp parallel for
     for (int i = 0; i < tree.samples().size(); ++i) {
         VectorType pos = tree.points()[i].pos();
 
-        for( int mm = 0; mm < mlsIter; ++mm) {
-            FitT fit;
-            fit.setWeightFunc({pos, t});
-            fit.init();
+        FitT fit;
+        fit.setNeighborFilter({pos, t});
 
-            processRangeNeighbors(i, [&fit](int j){
-                fit.addNeighbor(tree.points()[j]);
-            });
+        doOnRangeNeighbors(i, [&](const auto& rangeNeighbors){
+            fit.computeWithIdsMLS(rangeNeighbors, tree.points(), mlsIter);
+        });
 
-            if (fit.finalize() == Ponca::STABLE){
-                pos = fit.project( pos );
-                if ( mm == mlsIter -1 ) // last mls step, calling functor
-                    f(i, fit, pos);
-            }
-            else {
-                std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
-                break;
-            }
+        const auto& projectedPos = static_cast<const FitT&>(fit).getNeighborFilter().evalPos();
+
+        if (fit.isStable()) {
+            f(i, fit, projectedPos);
+        } else {
+            std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
         }
     }
 }
@@ -148,7 +149,7 @@ void processPointCloud(const typename FitT::Scalar t, Functor f){
 /// \tparam FitT Defines the type of estimator used for computation
 template<typename FitT>
 void estimateDifferentialQuantities_impl(const std::string& name) {
-    int nvert = tree.samples().size();
+    int nvert = int(tree.samples().size());
     Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
     Eigen::MatrixXd normal( nvert, 3 ), dmin( nvert, 3 ), dmax( nvert, 3 ), proj( nvert, 3 );
 
@@ -156,7 +157,7 @@ void estimateDifferentialQuantities_impl(const std::string& name) {
                  [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]() {
         processPointCloud<FitT>(NSize,
                                 [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]
-                                ( int i, const FitT& fit, const VectorType& mlsPos){
+                                (const int i, const FitT& fit, const VectorType& mlsPos){
 
             mean(i) = fit.kMean();
             kmax(i) = fit.kmax();
@@ -240,22 +241,18 @@ inline void mlsDryRun() {
 template<typename FitT, bool isSigned = true>
 Scalar evalScalarField_impl(const VectorType& input_pos)
 {
-    VectorType current_pos = input_pos;
-    Scalar current_value = std::numeric_limits<Scalar>::max();
-    for(int mm = 0; mm < mlsIter; ++mm)
-    {
-            FitT fit;
-            fit.setWeightFunc({current_pos, NSize}); // weighting function using current pos (not input pos)
-            auto res = fit.computeWithIds(tree.range_neighbors(current_pos, NSize), tree.points());
-            if(res == Ponca::STABLE) {
-            current_pos = fit.project(input_pos); // always project input pos
-            current_value = isSigned ? fit.potential(input_pos) : std::abs(fit.potential(input_pos));
-            // current_gradient = fit.primitiveGradient(input_pos);
-        } else {
-            // not enough neighbors (if far from the point cloud)
-            return .0;//std::numeric_limits<Scalar>::max();
-        }
+    FitT fit;
+    fit.setNeighborFilter({input_pos, NSize}); // weighting function using current pos (not input pos)
+    auto res = fit.computeWithIdsMLS(tree.rangeNeighbors(input_pos, NSize), tree.points(), mlsIter);
+
+    if(!fit.isStable()) {
+        // not enough neighbors (if far from the point cloud)
+        return Scalar(0); //std::numeric_limits<Scalar>::max();
     }
+
+    const Scalar current_value = isSigned ? fit.potential(input_pos) : std::abs(fit.potential(input_pos));
+    // current_gradient = fit.primitiveGradient(input_pos);
+
     return current_value;
 }
 
@@ -303,16 +300,16 @@ void callback() {
     {
       switch(item_current)
       {
-        case 0: registerRegularSlicer("slicer", evalScalarField_impl<FitASO, true>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
-        case 1: registerRegularSlicer("slicer", evalScalarField_impl<FitAPSS, true>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
-        case 2: registerRegularSlicer("slicer", evalScalarField_impl<FitPlane, false>,lower, upper, isHDSlicer?1024:256, axis, slice); break;
+        case 0: registerRegularSlicer("slicer", evalScalarField_impl<FitASO, true>   , lower, upper, isHDSlicer?1024:256, axis, slice); break;
+        case 1: registerRegularSlicer("slicer", evalScalarField_impl<FitAPSS, true>  , lower, upper, isHDSlicer?1024:256, axis, slice); break;
+        case 2: registerRegularSlicer("slicer", evalScalarField_impl<FitPlane, false>, lower, upper, isHDSlicer?1024:256, axis, slice); break;
       }
     }
     ImGui::SameLine();
     ImGui::PopItemWidth();
 }
 
-int main(int argc, char **argv) {
+int main(int /*argc*/, char** /*argv*/) {
     // Options
     polyscope::options::autocenterStructures = false;
     polyscope::options::programName = "poncascope";
@@ -325,14 +322,14 @@ int main(int argc, char **argv) {
     measureTime( "[libIGL] Load Armadillo", []()
     // For convenience: use libIGL to load a mesh, and store only the vertices location and normal vector
     {
-        std::string filename = "assets/armadillo.obj";
+        const std::string filename = "assets/armadillo.obj";
         Eigen::MatrixXi meshF;
         igl::readOBJ(filename, cloudV, meshF);
         igl::per_vertex_normals(cloudV, meshF, cloudN);
     } );
 
     // Check if normals have been properly loaded
-    int nbUnitNormal = cloudN.rowwise().squaredNorm().sum();
+    int nbUnitNormal = int(cloudN.rowwise().squaredNorm().sum());
     if ( nbUnitNormal != cloudV.rows() ) {
         std::cerr << "[libIGL] An error occurred when computing the normal vectors from the mesh. Aborting..."
                   << std::endl;
