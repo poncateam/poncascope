@@ -128,27 +128,27 @@ using FitPlaneDiff = Ponca::BasketDiff<
         FitPlane,
         Ponca::DiffType::FitSpaceDer,
         Ponca::CovariancePlaneDer,
-        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator>;
 
 using FitAPSS = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>;
 using FitAPSSDiff = Ponca::BasketDiff<
         FitAPSS,
         Ponca::DiffType::FitSpaceDer,
         Ponca::OrientedSphereDer,
-        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator>;
 
 using FitASO = FitAPSS;
 using FitASODiff = Ponca::BasketDiff<
         FitASO,
         Ponca::DiffType::FitSpaceDer,
         Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
-        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator>;
 
 using FitASODiff = Ponca::BasketDiff<
         FitASO,
         Ponca::DiffType::FitSpaceDer,
         Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
-        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator>;
 using FitCNCUniform = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::UniformGeneration>;
 using FitCNCIndep   = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::IndependentGeneration>;
 using FitCNCHex     = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::HexagramGeneration>;
