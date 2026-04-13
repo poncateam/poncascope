@@ -160,11 +160,11 @@ struct is_cnc_fit : std::false_type {};
 template<>
 struct is_cnc_fit<FitCNCUniform> : std::true_type {};
 template<>
-struct is_cnc_fit<FitCNCIndep> : std::true_type {};
+struct is_cnc_fit<FitCNCIndep>   : std::true_type {};
 template<>
-struct is_cnc_fit<FitCNCHex> : std::true_type {};
+struct is_cnc_fit<FitCNCHex>     : std::true_type {};
 template<>
-struct is_cnc_fit<FitCNCAvgHex> : std::true_type {};
+struct is_cnc_fit<FitCNCAvgHex>  : std::true_type {};
 
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
@@ -175,13 +175,26 @@ void processPointCloud(const typename FitT::Scalar t, const Functor& f){
         VectorType pos = tree.points()[i].pos();
 
         FitT fit;
-        fit.setNeighborFilter({pos, t});
+        if constexpr (is_cnc_fit<FitT>::value)
+            fit.setNeighborFilter({pos, t, tree.points()[i].normal() });
+        else
+            fit.setNeighborFilter({pos, t});
 
-        doOnRangeNeighbors(i, [&](const auto& rangeNeighbors){
-            fit.computeWithIdsMLS(rangeNeighbors, tree.points(), mlsIter);
+        std::vector<int> rangeNeighbors;
+        processRangeNeighbors(i, [&](const int j){
+            rangeNeighbors.push_back(j);
         });
 
-        const auto& projectedPos = static_cast<const FitT&>(fit).getNeighborFilter().evalPos();
+        if constexpr (is_cnc_fit<FitT>::value) {
+            fit.computeWithIds(rangeNeighbors, tree.points());
+        } else {
+            rangeNeighbors.push_back(i);
+            fit.computeWithIdsMLS(rangeNeighbors, tree.points(), mlsIter);
+        }
+        VectorType projectedPos = VectorType::Zero();
+
+        if constexpr (! is_cnc_fit<FitT>::value)
+            projectedPos = static_cast<const FitT&>(fit).getNeighborFilter().evalPos();
 
         if (fit.isStable()) {
             f(i, fit, projectedPos);
@@ -194,35 +207,27 @@ void processPointCloud(const typename FitT::Scalar t, const Functor& f){
 /// Generic processing function: traverse point cloud and compute mean, first and second curvatures + their direction
 /// \tparam FitT Defines the type of estimator used for computation
 template<typename FitT>
-void estimateDifferentialQuantities_impl(const std::string& name) {
+void estimateDifferentialQuantities(const std::string& name) {
     int nvert = int(tree.samples().size());
     Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
     Eigen::MatrixXd dmin( nvert, 3 ), dmax( nvert, 3 );
-
-    // Only allocate normal and proj if not CNC
     Eigen::MatrixXd normal, proj;
-    if constexpr (!is_cnc_fit<FitT>::value) {
-        normal.resize(nvert, 3);
-        proj.resize(nvert, 3);
-    }
+    normal.resize(nvert, 3);
+    proj.resize(nvert, 3);
 
     measureTime( "[Ponca] Compute differential quantities using " + name,
                  [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]() {
-        processPointCloudMLS<FitT>(NSize,
+        processPointCloud<FitT>(NSize,
                                 [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]
                                 (const int i, const FitT& fit, const VectorType& mlsPos){
 
-            mean(i) = fit.kMean();
-            kmax(i) = fit.kmax();
-            kmin(i) = fit.kmin();
-
-            dmin.row( i )   = fit.kminDirection();
-            dmax.row( i )   = fit.kmaxDirection();
-
-            if constexpr (!is_cnc_fit<FitT>::value) {
-                normal.row(i) = fit.primitiveGradient();
-                proj.row(i) = mlsPos - tree.points()[i].pos();
-            }
+            mean(i)       = fit.kMean();
+            kmax(i)       = fit.kmax();
+            kmin(i)       = fit.kmin();
+            dmin.row( i ) = fit.kminDirection();
+            dmax.row( i ) = fit.kmaxDirection();
+            normal.row(i) = fit.primitiveGradient();
+            proj.row(i)   = mlsPos - tree.points()[i].pos();
         });
     });
 
@@ -231,41 +236,55 @@ void estimateDifferentialQuantities_impl(const std::string& name) {
                      cloud->addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
                      cloud->addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
                      cloud->addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
-
                      cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
-                             Scalar(2) * pointRadius);
+                        Scalar(2) * pointRadius);
                      cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
-                         Scalar(2) * pointRadius);
-                    if constexpr (!is_cnc_fit<FitT>::value) {
-                        cloud->addVectorQuantity(name + " - normal", normal)->setVectorLengthScale(Scalar(2) * pointRadius);
-                        cloud->addVectorQuantity(name + " - projection", proj, polyscope::VectorType::AMBIENT);
-                    }
+                        Scalar(2) * pointRadius);
+                    cloud->addVectorQuantity(name + " - normal", normal)->setVectorLengthScale(Scalar(2) * pointRadius);
+                    cloud->addVectorQuantity(name + " - projection", proj, polyscope::VectorType::AMBIENT);
+
                  });
 }
 
-/// Compute curvature using Covariance Plane fitting
-/// \see estimateDifferentialQuantities_impl
-void estimateDifferentialQuantitiesWithPlane() {
-    estimateDifferentialQuantities_impl<FitPlaneDiff>("PSS");
-}
+/// Generic processing function: traverse point cloud and compute mean, first and second curvatures + their direction
+/// \tparam FitT Defines the type of estimator used for computation
+template<typename FitT>
+void estimateDifferentialQuantitiesCNC(const std::string& name) {
+    int nvert = int(tree.samples().size());
+    Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
+    Eigen::MatrixXd dmin( nvert, 3 ), dmax( nvert, 3 );
 
-/// Compute curvature using APSS
-/// \see estimateDifferentialQuantities_impl
-inline void estimateDifferentialQuantitiesWithAPSS() {
-    estimateDifferentialQuantities_impl<FitAPSSDiff>("APSS");
-}
+    measureTime( "[Ponca] Compute differential quantities using " + name,
+                 [&mean, &kmin, &kmax, &dmin, &dmax]() {
+        processPointCloud<FitT>(NSize,
+                                [&mean, &kmin, &kmax, &dmin, &dmax]
+                                (const int i, const FitT& fit, const VectorType& /*position*/){
 
-/// Compute curvature using Algebraic Shape Operator
-/// \see estimateDifferentialQuantities_impl
-inline void estimateDifferentialQuantitiesWithASO() {
-    estimateDifferentialQuantities_impl<FitASODiff>("ASO");
+            mean(i) = fit.kMean();
+            kmax(i) = fit.kmax();
+            kmin(i) = fit.kmin();
+            dmin.row( i )   = fit.kminDirection();
+            dmax.row( i )   = fit.kmaxDirection();
+        });
+    });
+
+    measureTime( "[Polyscope] Update differential quantities",
+                 [&name, &mean, &kmin, &kmax, &dmin, &dmax]() {
+                     cloud->addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
+                     cloud->addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
+                     cloud->addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
+                     cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
+                        Scalar(2) * pointRadius);
+                     cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
+                        Scalar(2) * pointRadius);
+                 });
 }
 
 /// Dry run: loop over all vertices + run MLS loops without computation
 /// This function is useful to monitor the KdTree performances
 inline void mlsDryRun() {
     measureTime( "[Ponca] Dry run MLS ", []() {
-        processPointCloudMLS<FitDry>( NSize, [](int, const FitDry&, const VectorType&){ });
+        processPointCloud<FitDry>( NSize, [](int, const FitDry&, const VectorType&){ });
     });
 }
 
@@ -280,7 +299,7 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
     {
             FitT fit;
             fit.setNeighborFilter({current_pos, NSize}); // weighting function using current pos (not input pos)
-            auto res = fit.computeWithIds(tree.range_neighbors(current_pos, NSize), tree.points());
+            auto res = fit.computeWithIds(tree.rangeNeighbors(current_pos, NSize), tree.points());
             if(res == Ponca::STABLE) {
             current_pos = fit.project(input_pos); // always project input pos
             current_value = isSigned ? fit.potential(input_pos) : std::abs(fit.potential(input_pos));
@@ -316,24 +335,27 @@ void callback() {
     ImGui::Text("Differential estimators");
     if (ImGui::Button("Dry Run"))  mlsDryRun();
     ImGui::SameLine();
-    if (ImGui::Button("Plane (PCA)")) estimateDifferentialQuantitiesWithPlane();
+    if (ImGui::Button("Plane (PCA)")) // Compute curvature using Covariance Plane fitting
+        estimateDifferentialQuantities<FitPlaneDiff>("PSS");
     ImGui::SameLine();
-    if (ImGui::Button("APSS")) estimateDifferentialQuantitiesWithAPSS();
+    if (ImGui::Button("APSS")) // Compute curvature using APSS
+        estimateDifferentialQuantities<FitAPSSDiff>("APSS");
     ImGui::SameLine();
-    if (ImGui::Button("ASO")) estimateDifferentialQuantitiesWithASO();
+    if (ImGui::Button("ASO")) // Compute curvature using Algebraic Shape Operator
+        estimateDifferentialQuantities<FitASODiff>("ASO");
 
     ImGui::Text("Corrected Normal Current estimator");
     if (ImGui::Button("Uniform"))
-        estimateDifferentialQuantities_impl<FitCNCUniform>("CNC - Uniform");
+        estimateDifferentialQuantitiesCNC<FitCNCUniform>("CNC - Uniform");
     ImGui::SameLine();
     if (ImGui::Button("Independent"))
-        estimateDifferentialQuantities_impl<FitCNCIndep>("CNC - Independent");
+        estimateDifferentialQuantitiesCNC<FitCNCIndep>("CNC - Independent");
     ImGui::SameLine();
     if (ImGui::Button("Hexagram"))
-        estimateDifferentialQuantities_impl<FitCNCHex>("CNC - Hexagram");
+        estimateDifferentialQuantitiesCNC<FitCNCHex>("CNC - Hexagram");
     ImGui::SameLine();
     if (ImGui::Button("AvgHexagram"))
-        estimateDifferentialQuantities_impl<FitCNCAvgHex>("CNC - AvgHexagram");
+        estimateDifferentialQuantitiesCNC<FitCNCAvgHex>("CNC - AvgHexagram");
 
     ImGui::Separator();
 
