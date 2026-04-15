@@ -7,10 +7,8 @@
 
 #include <Ponca/Fitting>
 #include <Ponca/SpatialPartitioning>
-#include <Ponca/src/Fitting/cnc.h>
 #include "poncaAdapters.hpp"
 #include "polyscopeSlicer.hpp"
-
 
 #include <iostream>
 #include <utility>
@@ -155,19 +153,15 @@ template<typename FitT, typename Functor>
 void processPointCloudMLS(const typename FitT::Scalar t, const Functor& f){
 #pragma omp parallel for
     for (int i = 0; i < tree.samples().size(); ++i) {
-        VectorType pos = tree.points()[i].pos();
-
         FitT fit;
-        fit.setNeighborFilter({pos, t});
+        fit.setNeighborFilter({tree.points()[i], t});
 
         doOnRangeNeighbors(i, [&](const auto& rangeNeighbors){
             fit.computeWithIdsMLS(rangeNeighbors, tree.points(), mlsIter);
         });
 
-        const auto& projectedPos = fit.getNeighborFilter().evalPos();
-
         if (fit.isStable()) {
-            f(i, fit, projectedPos);
+            f(i, fit);
         } else {
             std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
         }
@@ -180,10 +174,8 @@ template<typename FitT, typename Functor>
 void processPointCloudCNC(const typename FitT::Scalar t, const Functor& f){
 #pragma omp parallel for
     for (int i = 0; i < tree.samples().size(); ++i) {
-        VectorType pos = tree.points()[i].pos();
-
         FitT fit;
-        fit.setNeighborFilter({pos, t, tree.points()[i].normal() });
+        fit.setNeighborFilter({tree.points()[i], t});
 
         std::vector<int> rangeNeighbors;
         rangeNeighbors.push_back(i);
@@ -212,7 +204,7 @@ void estimateDifferentialQuantities(const std::string& name) {
                  [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]() {
         processPointCloudMLS<FitT>(NSize,
                                 [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]
-                                (const int i, const FitT& fit, const VectorType& mlsPos){
+                                (const int i, const FitT& fit){
 
             mean(i)       = fit.kMean();
             kmax(i)       = fit.kmax();
@@ -220,7 +212,7 @@ void estimateDifferentialQuantities(const std::string& name) {
             dmin.row( i ) = fit.kminDirection();
             dmax.row( i ) = fit.kmaxDirection();
             normal.row(i) = fit.primitiveGradient();
-            proj.row(i)   = mlsPos - tree.points()[i].pos();
+            proj.row(i)   = fit.getNeighborFilter().evalPos() - tree.points()[i].pos();
         });
     });
 
@@ -253,9 +245,9 @@ void estimateDifferentialQuantitiesCNC(const std::string& name) {
                                 [&mean, &kmin, &kmax, &dmin, &dmax]
                                 (const int i, const FitT& fit){
 
-            mean(i) = fit.kMean();
-            kmax(i) = fit.kmax();
-            kmin(i) = fit.kmin();
+            mean(i)         = fit.kMean();
+            kmax(i)         = fit.kmax();
+            kmin(i)         = fit.kmin();
             dmin.row( i )   = fit.kminDirection();
             dmax.row( i )   = fit.kmaxDirection();
         });
@@ -277,7 +269,7 @@ void estimateDifferentialQuantitiesCNC(const std::string& name) {
 /// This function is useful to monitor the KdTree performances
 inline void mlsDryRun() {
     measureTime( "[Ponca] Dry run MLS ", []() {
-        processPointCloudMLS<FitDry>( NSize, [](int, const FitDry&, const VectorType&){ });
+        processPointCloudMLS<FitDry>( NSize, [](int, const FitDry&){ });
     });
 }
 
