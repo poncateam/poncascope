@@ -149,55 +149,57 @@ using FitASODiff = Ponca::BasketDiff<
         Ponca::DiffType::FitSpaceDer,
         Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
         Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator>;
+
 using FitCNCUniform = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::UniformGeneration>;
 using FitCNCIndep   = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::IndependentGeneration>;
 using FitCNCHex     = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::HexagramGeneration>;
 using FitCNCAvgHex  = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::AvgHexagramGeneration>;
 
-// CNC Dispatch
-template<typename T>
-struct is_cnc_fit : std::false_type {};
-template<>
-struct is_cnc_fit<FitCNCUniform> : std::true_type {};
-template<>
-struct is_cnc_fit<FitCNCIndep>   : std::true_type {};
-template<>
-struct is_cnc_fit<FitCNCHex>     : std::true_type {};
-template<>
-struct is_cnc_fit<FitCNCAvgHex>  : std::true_type {};
-
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
 template<typename FitT, typename Functor>
-void processPointCloud(const typename FitT::Scalar t, const Functor& f){
+void processPointCloudMLS(const typename FitT::Scalar t, const Functor& f){
 #pragma omp parallel for
     for (int i = 0; i < tree.samples().size(); ++i) {
         VectorType pos = tree.points()[i].pos();
 
         FitT fit;
-        if constexpr (is_cnc_fit<FitT>::value)
-            fit.setNeighborFilter({pos, t, tree.points()[i].normal() });
-        else
-            fit.setNeighborFilter({pos, t});
+        fit.setNeighborFilter({pos, t});
 
-        std::vector<int> rangeNeighbors;
-        processRangeNeighbors(i, [&](const int j){
-            rangeNeighbors.push_back(j);
+        doOnRangeNeighbors(i, [&](const auto& rangeNeighbors){
+            fit.computeWithIdsMLS(rangeNeighbors, tree.points(), mlsIter);
         });
 
-        if constexpr (is_cnc_fit<FitT>::value) {
-            fit.computeWithIds(rangeNeighbors, tree.points());
-        } else {
-            rangeNeighbors.push_back(i);
-            fit.computeWithIdsMLS(rangeNeighbors, tree.points(), mlsIter);
-        }
-        VectorType projectedPos = VectorType::Zero();
-
-        if constexpr (! is_cnc_fit<FitT>::value)
-            projectedPos = static_cast<const FitT&>(fit).getNeighborFilter().evalPos();
+        const VectorType projectedPos = static_cast<const FitT&>(fit).getNeighborFilter().evalPos();
 
         if (fit.isStable()) {
             f(i, fit, projectedPos);
+        } else {
+            std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
+        }
+    }
+}
+
+/// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
+/// \note Functor is called only if fit is stable
+template<typename FitT, typename Functor>
+void processPointCloudCNC(const typename FitT::Scalar t, const Functor& f){
+#pragma omp parallel for
+    for (int i = 0; i < tree.samples().size(); ++i) {
+        VectorType pos = tree.points()[i].pos();
+
+        FitT fit;
+        fit.setNeighborFilter({pos, t, tree.points()[i].normal() });
+
+        std::vector<int> rangeNeighbors;
+        rangeNeighbors.push_back(i);
+        processRangeNeighbors(i, [&](const int j){
+            rangeNeighbors.push_back(j);
+        });
+        fit.computeWithIds(rangeNeighbors, tree.points());
+
+        if (fit.isStable()) {
+            f(i, fit);
         } else {
             std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
         }
@@ -210,14 +212,11 @@ template<typename FitT>
 void estimateDifferentialQuantities(const std::string& name) {
     int nvert = int(tree.samples().size());
     Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
-    Eigen::MatrixXd dmin( nvert, 3 ), dmax( nvert, 3 );
-    Eigen::MatrixXd normal, proj;
-    normal.resize(nvert, 3);
-    proj.resize(nvert, 3);
+    Eigen::MatrixXd normal( nvert, 3 ), dmin( nvert, 3 ), dmax( nvert, 3 ), proj( nvert, 3 );
 
     measureTime( "[Ponca] Compute differential quantities using " + name,
                  [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]() {
-        processPointCloud<FitT>(NSize,
+        processPointCloudMLS<FitT>(NSize,
                                 [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]
                                 (const int i, const FitT& fit, const VectorType& mlsPos){
 
@@ -256,9 +255,9 @@ void estimateDifferentialQuantitiesCNC(const std::string& name) {
 
     measureTime( "[Ponca] Compute differential quantities using " + name,
                  [&mean, &kmin, &kmax, &dmin, &dmax]() {
-        processPointCloud<FitT>(NSize,
+        processPointCloudCNC<FitT>(NSize,
                                 [&mean, &kmin, &kmax, &dmin, &dmax]
-                                (const int i, const FitT& fit, const VectorType& /*position*/){
+                                (const int i, const FitT& fit){
 
             mean(i) = fit.kMean();
             kmax(i) = fit.kmax();
@@ -284,7 +283,7 @@ void estimateDifferentialQuantitiesCNC(const std::string& name) {
 /// This function is useful to monitor the KdTree performances
 inline void mlsDryRun() {
     measureTime( "[Ponca] Dry run MLS ", []() {
-        processPointCloud<FitDry>( NSize, [](int, const FitDry&, const VectorType&){ });
+        processPointCloudMLS<FitDry>( NSize, [](int, const FitDry&, const VectorType&){ });
     });
 }
 
