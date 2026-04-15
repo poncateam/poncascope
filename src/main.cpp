@@ -133,14 +133,16 @@ using FitAPSSDiff = Ponca::BasketDiff<
         FitAPSS,
         Ponca::DiffType::FitSpaceDer,
         Ponca::OrientedSphereDer,
-        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator>;
+        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator,
+        Ponca::WeingartenCurvatureEstimatorDer>;
 
 using FitASO = FitAPSS;
 using FitASODiff = Ponca::BasketDiff<
         FitASO,
         Ponca::DiffType::FitSpaceDer,
         Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
-        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator>;
+        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator,
+        Ponca::WeingartenCurvatureEstimatorDer>;
 
 using FitCNCUniform = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::UniformGeneration>;
 using FitCNCIndep   = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::IndependentGeneration>;
