@@ -34,6 +34,7 @@ int iVertexSource  = 7;     /// < id of the selected point
 int kNN            = 10;    /// < neighborhood size (knn)
 float NSize        = 0.1f;  /// < neighborhood size (euclidean)
 int mlsIter        = 1;     /// < number of moving least squares iterations
+float mlsEpsilon   = 0.001f; /// < motion distance stopping criterion for moving least squares
 Scalar pointRadius = 0.005; /// < display radius of the point cloud
 bool useKnnGraph   = false; /// < use k-neighbor graph instead of kdtree
 
@@ -119,26 +120,77 @@ void colorizeKnn() {
     });
     cloud->addScalarQuantity(  "knn neighborhood", closest);
 }
+using FitDry = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::DryFit>;
+
+using FitPlane = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::CovariancePlaneFit>;
+using FitPlaneDiff = Ponca::BasketDiff<
+        FitPlane,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::CovariancePlaneDer,
+        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator>;
+
+using FitAPSS = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>;
+using FitAPSSDiff = Ponca::BasketDiff<
+        FitAPSS,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::OrientedSphereDer,
+        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator,
+        Ponca::WeingartenCurvatureEstimatorDer>;
+
+using FitASO = FitAPSS;
+using FitASODiff = Ponca::BasketDiff<
+        FitASO,
+        Ponca::DiffType::FitSpaceDer,
+        Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
+        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator,
+        Ponca::WeingartenCurvatureEstimatorDer>;
+
+using FitCNCUniform = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::UniformGeneration>;
+using FitCNCIndep   = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::IndependentGeneration>;
+using FitCNCHex     = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::HexagramGeneration>;
+using FitCNCAvgHex  = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::AvgHexagramGeneration>;
 
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
 template<typename FitT, typename Functor>
-void processPointCloud(const typename FitT::Scalar t, const Functor& f){
-#pragma omp parallel for
-    for (int i = 0; i < tree.samples().size(); ++i) {
-        VectorType pos = tree.points()[i].pos();
+void processPointCloudMLS(const typename FitT::Scalar t, const Functor& f){
 
+    Ponca::MLSEvaluationScheme<Scalar> mls_evaluation_scheme (mlsIter, Scalar(mlsEpsilon));
+#pragma omp parallel for private (mls_evaluation_scheme)
+    for (int i = 0; i < tree.samples().size(); ++i) {
         FitT fit;
-        fit.setNeighborFilter({pos, t});
+        fit.setNeighborFilter({tree.points()[i], t});
 
         doOnRangeNeighbors(i, [&](const auto& rangeNeighbors){
-            fit.computeWithIdsMLS(rangeNeighbors, tree.points(), mlsIter);
+            mls_evaluation_scheme.computeWithIds(fit, rangeNeighbors, tree.points());
         });
 
-        const auto& projectedPos = static_cast<const FitT&>(fit).getNeighborFilter().evalPos();
+        if (fit.isStable()) {
+            f(i, fit);
+        } else {
+            std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
+        }
+    }
+}
+
+/// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
+/// \note Functor is called only if fit is stable
+template<typename FitT, typename Functor>
+void processPointCloudCNC(const typename FitT::Scalar t, const Functor& f){
+#pragma omp parallel for
+    for (int i = 0; i < tree.samples().size(); ++i) {
+        FitT fit;
+        fit.setNeighborFilter({tree.points()[i], t});
+
+        std::vector<int> rangeNeighbors;
+        rangeNeighbors.push_back(i);
+        processRangeNeighbors(i, [&](const int j){
+            rangeNeighbors.push_back(j);
+        });
+        fit.computeWithIds(rangeNeighbors, tree.points());
 
         if (fit.isStable()) {
-            f(i, fit, projectedPos);
+            f(i, fit);
         } else {
             std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
         }
@@ -148,26 +200,24 @@ void processPointCloud(const typename FitT::Scalar t, const Functor& f){
 /// Generic processing function: traverse point cloud and compute mean, first and second curvatures + their direction
 /// \tparam FitT Defines the type of estimator used for computation
 template<typename FitT>
-void estimateDifferentialQuantities_impl(const std::string& name) {
+void estimateDifferentialQuantities(const std::string& name) {
     int nvert = int(tree.samples().size());
     Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
     Eigen::MatrixXd normal( nvert, 3 ), dmin( nvert, 3 ), dmax( nvert, 3 ), proj( nvert, 3 );
 
     measureTime( "[Ponca] Compute differential quantities using " + name,
                  [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]() {
-        processPointCloud<FitT>(NSize,
+        processPointCloudMLS<FitT>(NSize,
                                 [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]
-                                (const int i, const FitT& fit, const VectorType& mlsPos){
+                                (const int i, const FitT& fit){
 
-            mean(i) = fit.kMean();
-            kmax(i) = fit.kmax();
-            kmin(i) = fit.kmin();
-
-            normal.row( i ) = fit.primitiveGradient();
-            dmin.row( i )   = fit.kminDirection();
-            dmax.row( i )   = fit.kmaxDirection();
-
-            proj.row( i )   = mlsPos - tree.points()[i].pos();
+            mean(i)       = fit.kMean();
+            kmax(i)       = fit.kmax();
+            kmin(i)       = fit.kmin();
+            dmin.row( i ) = fit.kminDirection();
+            dmax.row( i ) = fit.kmaxDirection();
+            normal.row(i) = fit.primitiveGradient();
+            proj.row(i)   = fit.getNeighborFilter().evalPos() - tree.points()[i].pos();
         });
     });
 
@@ -176,63 +226,55 @@ void estimateDifferentialQuantities_impl(const std::string& name) {
                      cloud->addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
                      cloud->addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
                      cloud->addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
-
-                     cloud->addVectorQuantity(name + " - normal", normal)->setVectorLengthScale(
-                             Scalar(2) * pointRadius);
                      cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
-                             Scalar(2) * pointRadius);
+                        Scalar(2) * pointRadius);
                      cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
-                             Scalar(2) * pointRadius);
-                     cloud->addVectorQuantity(name + " - projection", proj, polyscope::VectorType::AMBIENT);
+                        Scalar(2) * pointRadius);
+                    cloud->addVectorQuantity(name + " - normal", normal)->setVectorLengthScale(Scalar(2) * pointRadius);
+                    cloud->addVectorQuantity(name + " - projection", proj, polyscope::VectorType::AMBIENT);
+
                  });
 }
 
-using FitDry = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::DryFit>;
+/// Generic processing function: traverse point cloud and compute mean, first and second curvatures + their direction
+/// \tparam FitT Defines the type of estimator used for computation
+template<typename FitT>
+void estimateDifferentialQuantitiesCNC(const std::string& name) {
+    int nvert = int(tree.samples().size());
+    Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
+    Eigen::MatrixXd dmin( nvert, 3 ), dmax( nvert, 3 );
 
-using FitPlane = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::CovariancePlaneFit>;
-using FitPlaneDiff = Ponca::BasketDiff<
-        FitPlane,
-        Ponca::DiffType::FitSpaceDer,
-        Ponca::CovariancePlaneDer,
-        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+    measureTime( "[Ponca] Compute differential quantities using " + name,
+                 [&mean, &kmin, &kmax, &dmin, &dmax]() {
+        processPointCloudCNC<FitT>(NSize,
+                                [&mean, &kmin, &kmax, &dmin, &dmax]
+                                (const int i, const FitT& fit){
 
-using FitAPSS = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>;
-using FitAPSSDiff = Ponca::BasketDiff<
-        FitAPSS,
-        Ponca::DiffType::FitSpaceDer,
-        Ponca::OrientedSphereDer,
-        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
+            mean(i)         = fit.kMean();
+            kmax(i)         = fit.kmax();
+            kmin(i)         = fit.kmin();
+            dmin.row( i )   = fit.kminDirection();
+            dmax.row( i )   = fit.kmaxDirection();
+        });
+    });
 
-using FitASO = FitAPSS;
-using FitASODiff = Ponca::BasketDiff<
-        FitASO,
-        Ponca::DiffType::FitSpaceDer,
-        Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
-        Ponca::CurvatureEstimatorBase, Ponca::NormalDerivativesCurvatureEstimator>;
-
-/// Compute curvature using Covariance Plane fitting
-/// \see estimateDifferentialQuantities_impl
-void estimateDifferentialQuantitiesWithPlane() {
-    estimateDifferentialQuantities_impl<FitPlaneDiff>("PSS");
-}
-
-/// Compute curvature using APSS
-/// \see estimateDifferentialQuantities_impl
-inline void estimateDifferentialQuantitiesWithAPSS() {
-    estimateDifferentialQuantities_impl<FitAPSSDiff>("APSS");
-}
-
-/// Compute curvature using Algebraic Shape Operator
-/// \see estimateDifferentialQuantities_impl
-inline void estimateDifferentialQuantitiesWithASO() {
-    estimateDifferentialQuantities_impl<FitASODiff>("ASO");
+    measureTime( "[Polyscope] Update differential quantities",
+                 [&name, &mean, &kmin, &kmax, &dmin, &dmax]() {
+                     cloud->addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
+                     cloud->addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
+                     cloud->addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
+                     cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
+                        Scalar(2) * pointRadius);
+                     cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
+                        Scalar(2) * pointRadius);
+                 });
 }
 
 /// Dry run: loop over all vertices + run MLS loops without computation
 /// This function is useful to monitor the KdTree performances
 inline void mlsDryRun() {
     measureTime( "[Ponca] Dry run MLS ", []() {
-        processPointCloud<FitDry>( NSize, [](int, const FitDry&, const VectorType& ){ });
+        processPointCloudMLS<FitDry>( NSize, [](int, const FitDry&){ });
     });
 }
 
@@ -243,7 +285,8 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
 {
     FitT fit;
     fit.setNeighborFilter({input_pos, NSize}); // weighting function using current pos (not input pos)
-    auto res = fit.computeWithIdsMLS(tree.rangeNeighbors(input_pos, NSize), tree.points(), mlsIter);
+    Ponca::MLSEvaluationScheme<Scalar> mls_evaluation_scheme (mlsIter, Scalar(mlsEpsilon));
+    auto res = mls_evaluation_scheme.computeWithIds(fit, tree.rangeNeighbors(input_pos, NSize), tree.points());
 
     if(!fit.isStable()) {
         // not enough neighbors (if far from the point cloud)
@@ -252,7 +295,6 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
 
     const Scalar current_value = isSigned ? fit.potential(input_pos) : std::abs(fit.potential(input_pos));
     // current_gradient = fit.primitiveGradient(input_pos);
-
     return current_value;
 }
 
@@ -268,25 +310,44 @@ void callback() {
     if(ImGui::InputInt("k-neighborhood size", &kNN)) recomputeKnnGraph();
     ImGui::InputFloat("neighborhood size", &NSize);
     ImGui::InputInt("source vertex", &iVertexSource);
-    ImGui::InputInt("Nb MLS Iterations", &mlsIter);
-    ImGui::SameLine();
+
+    ImGui::Separator();
     if (ImGui::Button("show knn")) colorizeKnn();
     ImGui::SameLine();
     if (ImGui::Button("show euclidean nei")) colorizeEuclideanNeighborhood();
 
     ImGui::Separator();
+    ImGui::InputInt("Nb MLS Iterations", &mlsIter);
+    ImGui::InputFloat("MLS Epsilon", &mlsEpsilon);
+    ImGui::Separator();
 
     ImGui::Text("Differential estimators");
     if (ImGui::Button("Dry Run"))  mlsDryRun();
     ImGui::SameLine();
-    if (ImGui::Button("Plane (PCA)")) estimateDifferentialQuantitiesWithPlane();
+    if (ImGui::Button("Plane (PCA)")) // Compute curvature using Covariance Plane fitting
+        estimateDifferentialQuantities<FitPlaneDiff>("PSS");
     ImGui::SameLine();
-    if (ImGui::Button("APSS")) estimateDifferentialQuantitiesWithAPSS();
+    if (ImGui::Button("APSS")) // Compute curvature using APSS
+        estimateDifferentialQuantities<FitAPSSDiff>("APSS");
     ImGui::SameLine();
-    if (ImGui::Button("ASO")) estimateDifferentialQuantitiesWithASO();
-    
+    if (ImGui::Button("ASO")) // Compute curvature using Algebraic Shape Operator
+        estimateDifferentialQuantities<FitASODiff>("ASO");
+
+    ImGui::Text("Corrected Normal Current estimator");
+    if (ImGui::Button("Uniform"))
+        estimateDifferentialQuantitiesCNC<FitCNCUniform>("CNC - Uniform");
+    ImGui::SameLine();
+    if (ImGui::Button("Independent"))
+        estimateDifferentialQuantitiesCNC<FitCNCIndep>("CNC - Independent");
+    ImGui::SameLine();
+    if (ImGui::Button("Hexagram"))
+        estimateDifferentialQuantitiesCNC<FitCNCHex>("CNC - Hexagram");
+    ImGui::SameLine();
+    if (ImGui::Button("AvgHexagram"))
+        estimateDifferentialQuantitiesCNC<FitCNCAvgHex>("CNC - AvgHexagram");
+
     ImGui::Separator();
-  
+
     ImGui::Text("Implicit function slicer");
     ImGui::SliderFloat("Slice", &slice, 0, 1.0); ImGui::SameLine();
     ImGui::Checkbox("HD", &isHDSlicer);
@@ -339,7 +400,7 @@ int main(int /*argc*/, char** /*argv*/) {
     //Bounding Box (used in the slicer)
     lower = cloudV.colwise().minCoeff();
     upper = cloudV.colwise().maxCoeff();
-  
+
     // Build Ponca KdTree
     measureTime( "[Ponca] Build KdTree", []() {
         buildKdTree(cloudV, cloudN, tree);

@@ -28,7 +28,7 @@ jobs:
       # `CMAKE_BUILD_TYPE` is not required if you are using a multi-configuration generators
       # See https://cmake.org/cmake/help/latest/variable/CMAKE_BUILD_TYPE.html?highlight=cmake_build_type
       run: |
-        cmake -B ${{github.workspace}}/build -GNinja -DCMAKE_CXX_COMPILER=cl.exe -DCMAKE_C_COMPILER=cl.exe
+        cmake -B ${{github.workspace}}/build -GNinja -DCMAKE_CXX_COMPILER=cl.exe -DCMAKE_C_COMPILER=cl.exe -DCMAKE_Fortran_COMPILER="" 
 
     - name: Build
       # Build your program with the given configuration
