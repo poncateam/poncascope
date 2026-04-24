@@ -34,6 +34,7 @@ int iVertexSource  = 7;     /// < id of the selected point
 int kNN            = 10;    /// < neighborhood size (knn)
 float NSize        = 0.1f;  /// < neighborhood size (euclidean)
 int mlsIter        = 1;     /// < number of moving least squares iterations
+float mlsEpsilon   = 0.001f; /// < motion distance stopping criterion for moving least squares
 Scalar pointRadius = 0.005; /// < display radius of the point cloud
 bool useKnnGraph   = false; /// < use k-neighbor graph instead of kdtree
 
@@ -153,13 +154,15 @@ using FitCNCAvgHex  = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::Avg
 /// \note Functor is called only if fit is stable
 template<typename FitT, typename Functor>
 void processPointCloudMLS(const typename FitT::Scalar t, const Functor& f){
-#pragma omp parallel for
+
+    Ponca::MLSEvaluationScheme<Scalar> mls_evaluation_scheme (mlsIter, Scalar(mlsEpsilon));
+#pragma omp parallel for private (mls_evaluation_scheme)
     for (int i = 0; i < tree.samples().size(); ++i) {
         FitT fit;
         fit.setNeighborFilter({tree.points()[i], t});
 
         doOnRangeNeighbors(i, [&](const auto& rangeNeighbors){
-            fit.computeWithIdsMLS(rangeNeighbors, tree.points(), mlsIter);
+            mls_evaluation_scheme.computeWithIds(fit, rangeNeighbors, tree.points());
         });
 
         if (fit.isStable()) {
@@ -282,7 +285,8 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
 {
     FitT fit;
     fit.setNeighborFilter({input_pos, NSize}); // weighting function using current pos (not input pos)
-    auto res = fit.computeWithIdsMLS(tree.rangeNeighbors(input_pos, NSize), tree.points(), mlsIter);
+    Ponca::MLSEvaluationScheme<Scalar> mls_evaluation_scheme (mlsIter, Scalar(mlsEpsilon));
+    auto res = mls_evaluation_scheme.computeWithIds(fit, tree.rangeNeighbors(input_pos, NSize), tree.points());
 
     if(!fit.isStable()) {
         // not enough neighbors (if far from the point cloud)
@@ -306,12 +310,15 @@ void callback() {
     if(ImGui::InputInt("k-neighborhood size", &kNN)) recomputeKnnGraph();
     ImGui::InputFloat("neighborhood size", &NSize);
     ImGui::InputInt("source vertex", &iVertexSource);
-    ImGui::InputInt("Nb MLS Iterations", &mlsIter);
-    ImGui::SameLine();
+
+    ImGui::Separator();
     if (ImGui::Button("show knn")) colorizeKnn();
     ImGui::SameLine();
     if (ImGui::Button("show euclidean nei")) colorizeEuclideanNeighborhood();
 
+    ImGui::Separator();
+    ImGui::InputInt("Nb MLS Iterations", &mlsIter);
+    ImGui::InputFloat("MLS Epsilon", &mlsEpsilon);
     ImGui::Separator();
 
     ImGui::Text("Differential estimators");
