@@ -32,11 +32,13 @@ polyscope::PointCloud* cloud = nullptr;
 // Options for algorithms
 int iVertexSource  = 7;     /// < id of the selected point
 int kNN            = 10;    /// < neighborhood size (knn)
+int kNNGraphK      = 6;     /// < number of neighbors used to compute the knngraph
 float NSize        = 0.1f;  /// < neighborhood size (euclidean)
 int mlsIter        = 1;     /// < number of moving least squares iterations
 float mlsEpsilon   = 0.001f; /// < motion distance stopping criterion for moving least squares
 Scalar pointRadius = 0.005; /// < display radius of the point cloud
 bool useKnnGraph   = false; /// < use k-neighbor graph instead of kdtree
+bool useRangeNei   = true;  /// < use range neighbors for estimators (or knn queries otherwise)
 
 
 
@@ -59,24 +61,29 @@ void measureTime( const std::string &actionName, const Functor& f){
     std::cout << actionName << " in " << (end - start) / 1ms << "ms.\n";
 }
 
-//! \brief Dispatch a lambda on a range neighbors query over either the KnnGraph or the KdTree
-template <typename Functor>
-void doOnRangeNeighbors(const int i, const Functor& f) {
-    if (useKnnGraph)
-        f(knnGraph->rangeNeighbors(i, NSize));
-    else
-        f(tree.rangeNeighbors(i, NSize));
+namespace internal {
+    //! \brief Dispatch a lambda on a range neighbors query over either the KnnGraph or the KdTree
+    template <typename Functor>
+    void doOnRangeNeighbors(const int i, const Functor& f) {
+        if (useKnnGraph)
+            f(knnGraph->rangeNeighbors(i, NSize));
+        else
+            f(tree.rangeNeighbors(i, NSize));
+    }
+
+    //! \brief Dispatch a lambda on a range neighbors query over either the KnnGraph or the KdTree
+    template <typename Functor>
+    void doOnKNeighbors(const int i, const Functor& f) {
+        f(tree.kNearestNeighbors(i, kNN));
+    }
 }
 
-//! \brief Dispatch a lambda by iterating over each neighbors of a range neighbors query for either the KnnGraph or the KdTree
+//! \brief Dispatch a lambda on either a range or a knn query depending on the UI.
 template <typename Functor>
-void processRangeNeighbors(const int i, const Functor& f){
-    doOnRangeNeighbors(i, [&f](auto rangeNeighbors) {
-        for (int j : rangeNeighbors) {
-            f(j);
-        }
-    });
+void doOnNeighbors(const int i, const Functor& f) {
+    useRangeNei ? internal::doOnRangeNeighbors(i,f) : internal::doOnKNeighbors(i, f);
 }
+
 
 /// Show in polyscope the euclidean neighborhood of the selected point (iVertexSource), with smooth weighting function
 void colorizeEuclideanNeighborhood() {
@@ -84,28 +91,17 @@ void colorizeEuclideanNeighborhood() {
     Eigen::VectorXd closest ( nvert );
     closest.setZero();
 
-    delete knnGraph;
-    knnGraph = new KnnGraph (tree, kNN);
-
-    SmoothWeightFunc w(VectorType::Zero(), NSize );
+    SmoothWeightFunc w(tree.points()[iVertexSource], NSize );
 
     closest(iVertexSource) = 2;
-    processRangeNeighbors(iVertexSource, [w, &closest](const int j){
-        const auto &q = tree.points()[j];
-        closest(j) = w( q ).first;
+    internal::doOnRangeNeighbors(iVertexSource, [w, &closest](auto &&neighborhood){
+        for (int j : neighborhood){
+            const auto &q = tree.points()[j];
+            closest(j) = w( q ).first;
+        }
     });
 
     cloud->addScalarQuantity(  "range neighborhood", closest);
-}
-
-/// Recompute K-Neighbor graph
-void recomputeKnnGraph() {
-    if(useKnnGraph) {
-        measureTime("[Ponca] Build KnnGraph", []() {
-            delete knnGraph;
-            knnGraph = new KnnGraph(tree, kNN);
-        });
-    }
 }
 
 /// Show in polyscope the knn neighborhood of the selected point (iVertexSource)
@@ -115,11 +111,23 @@ void colorizeKnn() {
     closest.setZero();
 
     closest(iVertexSource) = 2;
-    processRangeNeighbors(iVertexSource, [&closest](const int j){
-        closest(j) = 1;
+    internal::doOnKNeighbors(iVertexSource, [&closest](auto&& neighborhood){
+        for (int j : neighborhood){
+            closest(j) = 1;
+        }
     });
+
     cloud->addScalarQuantity(  "knn neighborhood", closest);
 }
+
+/// Recompute K-Neighbor graph
+void recomputeKnnGraph() {
+    measureTime("[Ponca] Build KnnGraph", []() {
+        delete knnGraph;
+        knnGraph = new KnnGraph(tree, kNNGraphK);
+    });
+}
+
 using FitDry = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::DryFit>;
 
 using FitPlane = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::CovariancePlaneFit>;
@@ -161,7 +169,7 @@ void processPointCloudMLS(const typename FitT::Scalar t, const Functor& f){
         FitT fit;
         fit.setNeighborFilter({tree.points()[i], t});
 
-        doOnRangeNeighbors(i, [&](const auto& rangeNeighbors){
+        doOnNeighbors(i, [&](const auto& rangeNeighbors){
             mls_evaluation_scheme.computeWithIds(fit, rangeNeighbors, tree.points());
         });
 
@@ -182,12 +190,14 @@ void processPointCloudCNC(const typename FitT::Scalar t, const Functor& f){
         FitT fit;
         fit.setNeighborFilter({tree.points()[i], t});
 
-        std::vector<int> rangeNeighbors;
-        rangeNeighbors.push_back(i);
-        processRangeNeighbors(i, [&](const int j){
-            rangeNeighbors.push_back(j);
+        std::vector<int> neighbors;
+        neighbors.push_back(i);
+        doOnNeighbors(i, [&neighbors](auto &&neighborhood){
+            for (int j : neighborhood){
+                neighbors.push_back(j);
+            }
         });
-        fit.computeWithIds(rangeNeighbors, tree.points());
+        fit.computeWithIds(neighbors, tree.points());
 
         if (fit.isStable()) {
             f(i, fit);
@@ -303,18 +313,32 @@ void callback() {
 
     ImGui::PushItemWidth(100);
 
-    ImGui::Text("Neighborhood collection");
-    ImGui::SameLine();
-    if(ImGui::Checkbox("Use KnnGraph", &useKnnGraph)) recomputeKnnGraph();
-
-    if(ImGui::InputInt("k-neighborhood size", &kNN)) recomputeKnnGraph();
-    ImGui::InputFloat("neighborhood size", &NSize);
-    ImGui::InputInt("source vertex", &iVertexSource);
+    ImGui::Text("Acceleration Structure");
+    bool knnGraphUIChanged = ImGui::Checkbox("Use KnnGraph", &useKnnGraph);
+    if (useKnnGraph)
+    {
+        ImGui::SameLine();
+        if (ImGui::InputInt("Graph k", &kNNGraphK) || knnGraphUIChanged) // recompute when activated or changed
+            recomputeKnnGraph();
+    }
 
     ImGui::Separator();
-    if (ImGui::Button("show knn")) colorizeKnn();
+    ImGui::Text("Neighborhood queries");
+    ImGui::Checkbox("Use Range Queries", &useRangeNei);
     ImGui::SameLine();
-    if (ImGui::Button("show euclidean nei")) colorizeEuclideanNeighborhood();
+    if (useRangeNei)
+        ImGui::InputFloat("neighborhood range size", &NSize);
+    else
+        ImGui::InputInt("k-neighborhood size", &kNN);
+
+    ImGui::Separator();
+    ImGui::InputInt("source vertex", &iVertexSource);
+    ImGui::SameLine();
+    if (useRangeNei) {
+        if (ImGui::Button("show euclidean nei")) colorizeEuclideanNeighborhood();
+    }
+    else
+        if (ImGui::Button("show knn")) colorizeKnn();
 
     ImGui::Separator();
     ImGui::InputInt("Nb MLS Iterations", &mlsIter);
