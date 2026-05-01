@@ -86,13 +86,14 @@ bool loadFile(const std::string& path, Context& context)
         context.NSize = scaleFactor * cloudMDist/Scalar(context.tree.samples().size());
     });
 
-
+    // Be sure that the KnnGraph is invalidated
+    delete context.knnGraph;
+    context.useKnnGraph = false;
+    context.knnGraph = nullptr;
 
     // Register the point cloud with Polyscope
     context.cloud->setPointRadius(context.pointRadius);
     polyscope::requestRedraw();
-
-    context.useKnnGraph = false;
 
     std::cout << "[Poncascope] Loading file succeeded"<< std::endl;
 
