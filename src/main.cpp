@@ -19,10 +19,6 @@ void callback() {
     ImGui::PushItemWidth(100);
 
     callback_io(context);
-    ImGui::Separator();
-    ImGui::InputInt("Nb MLS Iterations", &context.mlsIter);
-    ImGui::InputFloat("MLS Epsilon", &context.mlsEpsilon);
-    ImGui::Separator();
     callback_datastructures(context);
     callback_estimators(context);
     callback_slicer(context);
