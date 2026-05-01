@@ -63,6 +63,8 @@ add_executable( poncascope
                 src/poncaAdapters.hpp
                 src/polyscopeSlicer.hpp
                 src/context.hpp
+                src/io.hpp
+                src/io.cpp
                 src/main.cpp
                 )
 
