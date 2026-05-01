@@ -7,37 +7,71 @@
 
 #include "ImGuiFileDialog.h"
 
+#include <filesystem>
+#include <string>
+
 using namespace Ponca;
 using Scalar     = Context::Scalar;
 using VectorType = Context::VectorType;
 
+bool loadObjUsingLibIGL(const std::string& path, Context& context, Eigen::MatrixXd &coords, Eigen::MatrixXd &normals)
+{
+    bool worked;
+    Eigen::MatrixXi meshF;
+    measureTime( "[libIGL] obj file loading", [path, &coords, &meshF, &worked]()
+    // For convenience: use libIGL to load a mesh, and store only the vertices location and normal vector
+    {
+        const std::string filename = path.c_str();
+        worked = igl::readOBJ(filename, coords, meshF);
+    } );
+
+    if (worked) {
+        if (meshF.cols()==3) // we have a triangle mesh
+        {
+            igl::per_vertex_normals(coords, meshF, normals);
+        }
+    }
+    else {
+        std::cerr << "[libIGL] An error occurred when loading file " << path
+                  << std::endl;
+        return false;
+    }
+    return true;
+}
+
+// Simple constexpr hash function
+// Source: https://www.reddit.com/r/cpp/comments/jkw84k/strings_in_switch_statements_using_constexp/
+constexpr size_t hash(const char* str){
+    const long long p = 131;
+    const long long m = 4294967291; // 2^32 - 5, largest 32 bit prime
+    long long total = 0;
+    long long current_multiplier = 1;
+    for (int i = 0; str[i] != '\0'; ++i){
+        total = (total + current_multiplier * str[i]) % m;
+        current_multiplier = (current_multiplier * p) % m;
+    }
+    return total;
+}
+
 bool loadFile(const std::string& path, Context& context)
 {
     std::cout << "[Poncascope] Load file " << path << std::endl;
-    // first block: output cloudV and cloudN
     Eigen::MatrixXd newCloud, newNormals;
-    {
-        bool worked;
-        Eigen::MatrixXi meshF;
-        measureTime( "[libIGL] obj file loading", [path, &newCloud, &meshF, &worked]()
-        // For convenience: use libIGL to load a mesh, and store only the vertices location and normal vector
-        {
-            const std::string filename = path.c_str();
-            worked = igl::readOBJ(filename, newCloud, meshF);
-        } );
 
-        if (worked) {
-            if (meshF.cols()==3) // we have a triangle mesh
-            {
-                igl::per_vertex_normals(newCloud, meshF, newNormals);
-            }
-        }
-        else {
-            std::cerr << "[libIGL] An error occurred when loading file " << path
-                      << std::endl;
-            return false;
-        }
+    std::filesystem::path filePath(path);
+    bool loaded = false;
+
+    const std::string ext = filePath.extension();
+    switch (hash(ext.c_str()))
+    {
+    case hash(".obj"):
+        loaded = loadObjUsingLibIGL(path, context, newCloud, newNormals);
+        break;
+    default:
+        loaded = false;
     }
+
+    if (!loaded) return false;
 
     // Check if normals have been properly loaded
     /// \fixme : should not abort, but rather compute normals using Ponca.
