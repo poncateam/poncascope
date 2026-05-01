@@ -59,35 +59,6 @@ void recomputeKnnGraph() {
     });
 }
 
-using FitDry = Ponca::Basket<Context::PPAdapter, Context::SmoothWeightFunc, Ponca::DryFit>;
-
-using FitPlane = Ponca::Basket<Context::PPAdapter, Context::SmoothWeightFunc, Ponca::CovariancePlaneFit>;
-using FitPlaneDiff = Ponca::BasketDiff<
-        FitPlane,
-        Ponca::DiffType::FitSpaceDer,
-        Ponca::CovariancePlaneDer,
-        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator>;
-
-using FitAPSS = Ponca::Basket<Context::PPAdapter, Context::SmoothWeightFunc, Ponca::OrientedSphereFit>;
-using FitAPSSDiff = Ponca::BasketDiff<
-        FitAPSS,
-        Ponca::DiffType::FitSpaceDer,
-        Ponca::OrientedSphereDer,
-        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator,
-        Ponca::WeingartenCurvatureEstimatorDer>;
-
-using FitASO = FitAPSS;
-using FitASODiff = Ponca::BasketDiff<
-        FitASO,
-        Ponca::DiffType::FitSpaceDer,
-        Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
-        Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator,
-        Ponca::WeingartenCurvatureEstimatorDer>;
-
-using FitCNCUniform = Ponca::CNC<Context::PPAdapter, Ponca::TriangleGenerationMethod::UniformGeneration>;
-using FitCNCIndep   = Ponca::CNC<Context::PPAdapter, Ponca::TriangleGenerationMethod::IndependentGeneration>;
-using FitCNCHex     = Ponca::CNC<Context::PPAdapter, Ponca::TriangleGenerationMethod::HexagramGeneration>;
-using FitCNCAvgHex  = Ponca::CNC<Context::PPAdapter, Ponca::TriangleGenerationMethod::AvgHexagramGeneration>;
 
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
@@ -320,9 +291,9 @@ void callback() {
     {
       switch(item_current)
       {
-        case 0: registerRegularSlicer("slicer", evalScalarField_impl<FitASO, true>   , context.lower, context.upper, context.isHDSlicer?1024:256, context.axis, context.slice); break;
-        case 1: registerRegularSlicer("slicer", evalScalarField_impl<FitAPSS, true>  , context.lower, context.upper, context.isHDSlicer?1024:256, context.axis, context.slice); break;
-        case 2: registerRegularSlicer("slicer", evalScalarField_impl<FitPlane, false>, context.lower, context.upper, context.isHDSlicer?1024:256, context.axis, context.slice); break;
+        case 0: registerRegularSlicer("slicer", evalScalarField_impl<Context::FitASO, true>   , context.lower, context.upper, context.isHDSlicer?1024:256, context.axis, context.slice); break;
+        case 1: registerRegularSlicer("slicer", evalScalarField_impl<Context::FitAPSS, true>  , context.lower, context.upper, context.isHDSlicer?1024:256, context.axis, context.slice); break;
+        case 2: registerRegularSlicer("slicer", evalScalarField_impl<Context::FitPlane, false>, context.lower, context.upper, context.isHDSlicer?1024:256, context.axis, context.slice); break;
       }
     }
     ImGui::SameLine();

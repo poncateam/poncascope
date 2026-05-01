@@ -22,6 +22,37 @@ struct Context
     using SmoothWeightFunc   = Ponca::DistWeightFunc<PPAdapter, Ponca::SmoothWeightKernel<Scalar> >;
     //using SmoothWeightFunc   = Ponca::DistWeightFunc<PPAdapter, Ponca::ExpWeightKernel<Scalar> >;
 
+
+    using FitDry = Ponca::Basket<Context::PPAdapter, Context::SmoothWeightFunc, Ponca::DryFit>;
+
+    using FitPlane = Ponca::Basket<Context::PPAdapter, Context::SmoothWeightFunc, Ponca::CovariancePlaneFit>;
+    using FitPlaneDiff = Ponca::BasketDiff<
+            FitPlane,
+            Ponca::DiffType::FitSpaceDer,
+            Ponca::CovariancePlaneDer,
+            Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator>;
+
+    using FitAPSS = Ponca::Basket<Context::PPAdapter, Context::SmoothWeightFunc, Ponca::OrientedSphereFit>;
+    using FitAPSSDiff = Ponca::BasketDiff<
+            FitAPSS,
+            Ponca::DiffType::FitSpaceDer,
+            Ponca::OrientedSphereDer,
+            Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator,
+            Ponca::WeingartenCurvatureEstimatorDer>;
+
+    using FitASO = FitAPSS;
+    using FitASODiff = Ponca::BasketDiff<
+            FitASO,
+            Ponca::DiffType::FitSpaceDer,
+            Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
+            Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator,
+            Ponca::WeingartenCurvatureEstimatorDer>;
+
+    using FitCNCUniform = Ponca::CNC<Context::PPAdapter, Ponca::TriangleGenerationMethod::UniformGeneration>;
+    using FitCNCIndep   = Ponca::CNC<Context::PPAdapter, Ponca::TriangleGenerationMethod::IndependentGeneration>;
+    using FitCNCHex     = Ponca::CNC<Context::PPAdapter, Ponca::TriangleGenerationMethod::HexagramGeneration>;
+    using FitCNCAvgHex  = Ponca::CNC<Context::PPAdapter, Ponca::TriangleGenerationMethod::AvgHexagramGeneration>;
+
     // Variables
     Eigen::MatrixXd cloudV, cloudN;
     KdTree tree;
