@@ -510,7 +510,7 @@ void callback() {
     ImGui::PopItemWidth();
 }
 
-int main(int /*argc*/, char** /*argv*/) {
+int main(int argc, char** argv) {
     // Options
     polyscope::options::autocenterStructures = false;
     polyscope::options::programName = "poncascope";
@@ -520,7 +520,12 @@ int main(int /*argc*/, char** /*argv*/) {
     // Initialize polyscope
     polyscope::init();
 
-    loadFile("assets/armadillo.obj");
+    if (argc > 1)
+    {
+        loadFile(argv[1]);
+    }
+    else
+        loadFile("assets/armadillo.obj");
 
     // Add the callback
     polyscope::state::userCallback = callback;
