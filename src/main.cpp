@@ -314,15 +314,12 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
 bool loadFile(const std::string& path)
 {
     std::cout << "[Poncascope] Load file " << path << std::endl;
-
-    std::cout << cloudV.size() << std::endl;
-    std::cout << cloudN.size() << std::endl;
     // first block: output cloudV and cloudN
     Eigen::MatrixXd newCloud, newNormals;
     {
         bool worked;
         Eigen::MatrixXi meshF;
-        measureTime( "[libIGL] Load Armadillo", [path, &newCloud, &meshF, &worked]()
+        measureTime( "[libIGL] obj file loading", [path, &newCloud, &meshF, &worked]()
         // For convenience: use libIGL to load a mesh, and store only the vertices location and normal vector
         {
             const std::string filename = path.c_str();
@@ -356,9 +353,6 @@ bool loadFile(const std::string& path)
     // no need to delete the previous cloud, polyscope handles it
     cloud = polyscope::registerPointCloud("cloud", cloudV);
     cloudN = newNormals;
-
-    std::cout << cloudV.size() << std::endl;
-    std::cout << cloudN.size() << std::endl;
 
     // Bounding Box (used in the slicer)
     lower = cloudV.colwise().minCoeff();
