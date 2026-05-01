@@ -44,6 +44,14 @@ message("\n\n == CMAKE recursively building ImGuiFileDialog\n")
 add_subdirectory("external/ImGuiFileDialog")
 target_include_directories(ImGuiFileDialog PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/polyscope/deps/imgui/imgui")
 
+# Add tinyGLTF
+message("\n\n == CMAKE recursively building tinyGLTF\n")
+set(TINYGLTF_BUILD_LOADER_EXAMPLE OFF)
+set(TINYGLTF_HEADER_ONLY ON)
+set(TINYGLTF_INSTALL OFF)
+set(TINYGLTF_INSTALL_VENDOR OFF)
+add_subdirectory(external/tinygltf)
+
 # Move assets to binary folder
 add_custom_target( poncascope-copyassets
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets/" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets"
@@ -81,7 +89,7 @@ target_include_directories(poncascope PUBLIC
                             "${CMAKE_CURRENT_SOURCE_DIR}/external/ponca/")
 
 # Link settings
-target_link_libraries(poncascope polyscope ${Eigen_Deps} ${OpenMP_link_libraries} ImGuiFileDialog)
+target_link_libraries(poncascope polyscope ${Eigen_Deps} ${OpenMP_link_libraries} ImGuiFileDialog tinygltf)
 
 
 # Fix potential bug on windows (appears with VSCode, but not with VS)
