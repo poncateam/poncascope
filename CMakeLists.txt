@@ -39,10 +39,16 @@ endif()
 message("\n\n == CMAKE recursively building Polyscope\n")
 add_subdirectory("external/polyscope")
 
+# Add ImGuiFileDialog
+message("\n\n == CMAKE recursively building ImGuiFileDialog\n")
+add_subdirectory("external/ImGuiFileDialog")
+target_include_directories(ImGuiFileDialog PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/external/polyscope/deps/imgui/imgui")
+
 # Move assets to binary folder
 add_custom_target( poncascope-copyassets
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets/" "${CMAKE_RUNTIME_OUTPUT_DIRECTORY}/assets"
         COMMENT "Install assets to binary folder")
+
 
 # Find OpenMP
 find_package(OpenMP)
@@ -67,7 +73,7 @@ target_include_directories(poncascope PUBLIC
                             "${CMAKE_CURRENT_SOURCE_DIR}/external/ponca/")
 
 # Link settings
-target_link_libraries(poncascope polyscope ${Eigen_Deps} ${OpenMP_link_libraries})
+target_link_libraries(poncascope polyscope ${Eigen_Deps} ${OpenMP_link_libraries} ImGuiFileDialog)
 
 
 # Fix potential bug on windows (appears with VSCode, but not with VS)
