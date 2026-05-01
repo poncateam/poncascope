@@ -9,6 +9,7 @@
 // This file defines all the main types + data shared across the application components
 #include "./context.hpp"
 #include "./io.hpp"
+#include "./estimators.hpp"
 
 Context context;
 
@@ -56,138 +57,6 @@ void recomputeKnnGraph() {
     measureTime("[Ponca] Build KnnGraph", []() {
         delete context.knnGraph;
         context.knnGraph = new Context::KnnGraph(context.tree, context.kNNGraphK);
-    });
-}
-
-
-/// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
-/// \note Functor is called only if fit is stable
-template<typename FitT, typename Functor>
-void processPointCloudMLS(const typename FitT::Scalar t, const Functor& f){
-
-    Ponca::MLSEvaluationScheme<Scalar> mls_evaluation_scheme (context.mlsIter, Scalar(context.mlsEpsilon));
-#pragma omp parallel for private (mls_evaluation_scheme)
-    for (int i = 0; i < context.tree.samples().size(); ++i) {
-        FitT fit;
-        fit.setNeighborFilter({context.tree.points()[i], t});
-
-        context.doOnNeighbors(i, [&](const auto& rangeNeighbors){
-            mls_evaluation_scheme.computeWithIds(fit, rangeNeighbors, context.tree.points());
-        });
-
-        if (fit.isStable()) {
-            f(i, fit);
-        } else {
-            std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
-        }
-    }
-}
-
-/// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
-/// \note Functor is called only if fit is stable
-template<typename FitT, typename Functor>
-void processPointCloudCNC(const typename FitT::Scalar t, const Functor& f){
-#pragma omp parallel for
-    for (int i = 0; i < context.tree.samples().size(); ++i) {
-        FitT fit;
-        fit.setNeighborFilter({context.tree.points()[i], t});
-
-        std::vector<int> neighbors;
-        neighbors.push_back(i);
-        context.doOnNeighbors(i, [&neighbors](auto &&neighborhood){
-            for (int j : neighborhood){
-                neighbors.push_back(j);
-            }
-        });
-        fit.computeWithIds(neighbors, context.tree.points());
-
-        if (fit.isStable()) {
-            f(i, fit);
-        } else {
-            std::cerr << "Warning: fit " << i << " is not stable" << std::endl;
-        }
-    }
-}
-
-/// Generic processing function: traverse point cloud and compute mean, first and second curvatures + their direction
-/// \tparam FitT Defines the type of estimator used for computation
-template<typename FitT>
-void estimateDifferentialQuantities(const std::string& name) {
-    int nvert = int(context.tree.samples().size());
-    Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
-    Eigen::MatrixXd normal( nvert, 3 ), dmin( nvert, 3 ), dmax( nvert, 3 ), proj( nvert, 3 );
-
-    measureTime( "[Ponca] Compute differential quantities using " + name,
-                 [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]() {
-        processPointCloudMLS<FitT>(context.NSize,
-                                [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]
-                                (const int i, const FitT& fit){
-
-            mean(i)       = fit.kMean();
-            kmax(i)       = fit.kmax();
-            kmin(i)       = fit.kmin();
-            dmin.row( i ) = fit.kminDirection();
-            dmax.row( i ) = fit.kmaxDirection();
-            normal.row(i) = fit.primitiveGradient();
-            proj.row(i)   = fit.getNeighborFilter().evalPos() - context.tree.points()[i].pos();
-        });
-    });
-
-    measureTime( "[Polyscope] Update differential quantities",
-                 [&name, &mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]() {
-                     context.cloud->addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
-                     context.cloud->addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
-                     context.cloud->addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
-                     context.cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
-                        Scalar(2) * context.pointRadius);
-                     context.cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
-                        Scalar(2) * context.pointRadius);
-                    context.cloud->addVectorQuantity(name + " - normal", normal)->setVectorLengthScale(
-                        Scalar(2) * context.pointRadius);
-                    context.cloud->addVectorQuantity(name + " - projection", proj, polyscope::VectorType::AMBIENT);
-
-                 });
-}
-
-/// Generic processing function: traverse point cloud and compute mean, first and second curvatures + their direction
-/// \tparam FitT Defines the type of estimator used for computation
-template<typename FitT>
-void estimateDifferentialQuantitiesCNC(const std::string& name) {
-    int nvert = int(context.tree.samples().size());
-    Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
-    Eigen::MatrixXd dmin( nvert, 3 ), dmax( nvert, 3 );
-
-    measureTime( "[Ponca] Compute differential quantities using " + name,
-                 [&mean, &kmin, &kmax, &dmin, &dmax]() {
-        processPointCloudCNC<FitT>(context.NSize,
-                                [&mean, &kmin, &kmax, &dmin, &dmax]
-                                (const int i, const FitT& fit){
-
-            mean(i)         = fit.kMean();
-            kmax(i)         = fit.kmax();
-            kmin(i)         = fit.kmin();
-            dmin.row( i )   = fit.kminDirection();
-            dmax.row( i )   = fit.kmaxDirection();
-        });
-    });
-
-    measureTime( "[Polyscope] Update differential quantities",
-                 [&name, &mean, &kmin, &kmax, &dmin, &dmax]() {
-                     context.cloud->addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
-                     context.cloud->addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
-                     context.cloud->addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
-                     context.cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
-                        Scalar(2) * context.pointRadius);
-                     context.cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
-                        Scalar(2) * context.pointRadius);
-                 });
-}
-
-/// Dry run: loop over all vertices + run MLS loops without computation
-/// This function is useful to monitor the KdTree performances
-inline void mlsDryRun() {
-    measureTime( "[Ponca] Dry run MLS ", []() {
-        processPointCloudMLS<FitDry>( context.NSize, [](int, const FitDry&){ });
     });
 }
 
@@ -251,30 +120,7 @@ void callback() {
     ImGui::InputFloat("MLS Epsilon", &context.mlsEpsilon);
     ImGui::Separator();
 
-    ImGui::Text("Differential estimators");
-    if (ImGui::Button("Dry Run"))  mlsDryRun();
-    ImGui::SameLine();
-    if (ImGui::Button("Plane (PCA)")) // Compute curvature using Covariance Plane fitting
-        estimateDifferentialQuantities<FitPlaneDiff>("PSS");
-    ImGui::SameLine();
-    if (ImGui::Button("APSS")) // Compute curvature using APSS
-        estimateDifferentialQuantities<FitAPSSDiff>("APSS");
-    ImGui::SameLine();
-    if (ImGui::Button("ASO")) // Compute curvature using Algebraic Shape Operator
-        estimateDifferentialQuantities<FitASODiff>("ASO");
-
-    ImGui::Text("Corrected Normal Current estimator");
-    if (ImGui::Button("Uniform"))
-        estimateDifferentialQuantitiesCNC<FitCNCUniform>("CNC - Uniform");
-    ImGui::SameLine();
-    if (ImGui::Button("Independent"))
-        estimateDifferentialQuantitiesCNC<FitCNCIndep>("CNC - Independent");
-    ImGui::SameLine();
-    if (ImGui::Button("Hexagram"))
-        estimateDifferentialQuantitiesCNC<FitCNCHex>("CNC - Hexagram");
-    ImGui::SameLine();
-    if (ImGui::Button("AvgHexagram"))
-        estimateDifferentialQuantitiesCNC<FitCNCAvgHex>("CNC - AvgHexagram");
+    callback_estimators(context);
 
     ImGui::Separator();
 
