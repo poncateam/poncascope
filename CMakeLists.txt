@@ -61,10 +61,11 @@ endif()
 # Create an executable
 add_executable( poncascope
                 src/poncaAdapters.hpp
-                src/polyscopeSlicer.hpp
                 src/context.hpp
                 src/estimators.hpp
                 src/estimators.cpp
+                src/slicer.hpp
+                src/slicer.cpp
                 src/io.hpp
                 src/io.cpp
                 src/main.cpp

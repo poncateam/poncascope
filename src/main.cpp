@@ -1,8 +1,6 @@
 #include "polyscope/polyscope.h"
 #include "polyscope/point_cloud.h"
 
-#include "polyscopeSlicer.hpp"
-
 #include <iostream>
 #include <utility>
 
@@ -10,6 +8,7 @@
 #include "./context.hpp"
 #include "./io.hpp"
 #include "./estimators.hpp"
+#include "./slicer.hpp"
 
 Context context;
 
@@ -60,26 +59,6 @@ void recomputeKnnGraph() {
     });
 }
 
-///Evaluate scalar field for generic FitType.
-///// \tparam FitT Defines the type of estimator used for computation
-template<typename FitT, bool isSigned = true>
-Scalar evalScalarField_impl(const VectorType& input_pos)
-{
-    FitT fit;
-    fit.setNeighborFilter({input_pos, context.NSize}); // weighting function using current pos (not input pos)
-    Ponca::MLSEvaluationScheme<Scalar> mls_evaluation_scheme (context.mlsIter, Scalar(context.mlsEpsilon));
-    auto res = mls_evaluation_scheme.computeWithIds(fit, context.tree.rangeNeighbors(input_pos, context.NSize),
-        context.tree.points());
-
-    if(!fit.isStable()) {
-        // not enough neighbors (if far from the point cloud)
-        return Scalar(0); //std::numeric_limits<Scalar>::max();
-    }
-
-    const Scalar current_value = isSigned ? fit.potential(input_pos) : std::abs(fit.potential(input_pos));
-    // current_gradient = fit.primitiveGradient(input_pos);
-    return current_value;
-}
 
 /// Define Polyscope callbacks
 void callback() {
@@ -124,25 +103,8 @@ void callback() {
 
     ImGui::Separator();
 
-    ImGui::Text("Implicit function slicer");
-    ImGui::SliderFloat("Slice", &context.slice, 0, 1.0); ImGui::SameLine();
-    ImGui::Checkbox("HD", &context.isHDSlicer);
-    ImGui::RadioButton("X axis", &context.axis, 0); ImGui::SameLine();
-    ImGui::RadioButton("Y axis", &context.axis, 1); ImGui::SameLine();
-    ImGui::RadioButton("Z axis", &context.axis, 2);
-    const char* items[] = { "ASO", "APSS", "PSS"};
-    static int item_current = 0;
-    ImGui::Combo("Fit function", &item_current, items, IM_ARRAYSIZE(items));
-    if (ImGui::Button("Update"))
-    {
-      switch(item_current)
-      {
-        case 0: registerRegularSlicer("slicer", evalScalarField_impl<Context::FitASO, true>   , context.lower, context.upper, context.isHDSlicer?1024:256, context.axis, context.slice); break;
-        case 1: registerRegularSlicer("slicer", evalScalarField_impl<Context::FitAPSS, true>  , context.lower, context.upper, context.isHDSlicer?1024:256, context.axis, context.slice); break;
-        case 2: registerRegularSlicer("slicer", evalScalarField_impl<Context::FitPlane, false>, context.lower, context.upper, context.isHDSlicer?1024:256, context.axis, context.slice); break;
-      }
-    }
-    ImGui::SameLine();
+    callback_slicer(context);
+
     ImGui::PopItemWidth();
 }
 
