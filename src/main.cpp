@@ -5,141 +5,75 @@
 
 #include "polyscope/point_cloud.h"
 
-#include "ImGuiFileDialog.h"
-
-#include <Ponca/Fitting>
-#include <Ponca/SpatialPartitioning>
-#include "poncaAdapters.hpp"
 #include "polyscopeSlicer.hpp"
+
+#include "ImGuiFileDialog.h"
 
 #include <iostream>
 #include <utility>
-#include <chrono>
 
-// Types definition
-using Scalar             = double;
-using VectorType         = Eigen::Vector<Scalar, 3>;
-using PPAdapter          = BlockPointAdapter<Scalar>;
-using KdTree             = Ponca::KdTreeSparse<PPAdapter>;
-using KnnGraph           = Ponca::KnnGraph<PPAdapter>;
-using SmoothWeightFunc   = Ponca::DistWeightFunc<PPAdapter, Ponca::SmoothWeightKernel<Scalar> >;
-//using SmoothWeightFunc   = Ponca::DistWeightFunc<PPAdapter, Ponca::ExpWeightKernel<Scalar> >;
+// This file defines all the main types + data shared across the application components
+#include "./context.hpp"
 
-// Variables
-Eigen::MatrixXd cloudV, cloudN;
-KdTree tree;
-KnnGraph* knnGraph {nullptr};
-polyscope::PointCloud* cloud = nullptr;
+Context context;
 
-// Options for algorithms
-int iVertexSource    = 7;     /// < id of the selected point
-int kNN              = 10;    /// < neighborhood size (knn)
-int kNNGraphK        = 6;     /// < number of neighbors used to compute the knngraph
-float NSize          = 0.1f;  /// < neighborhood size (euclidean)
-int mlsIter          = 1;     /// < number of moving least squares iterations
-float mlsEpsilon     = 0.001f; /// < motion distance stopping criterion for moving least squares
-Scalar pointRadius   = 0.005; /// < display radius of the point cloud
-bool useKnnGraph     = false; /// < use k-neighbor graph instead of kdtree
-bool useRangeNei     = true;  /// < use range neighbors for estimators (or knn queries otherwise)
-std::string lastPath = ".";   /// < last path used in file loader
-
-
-// Slicer
-float slice    = 0.f;
-int axis       = 0;
-bool isHDSlicer=false;
-VectorType lower, upper;
-
-
-/// Convenience function measuring and printing the processing time of F
-template <typename Functor>
-void measureTime( const std::string &actionName, const Functor& f){
-    using namespace std::literals; // enables the usage of 24h instead of e.g. std::chrono::hours(24)
-
-    const std::chrono::time_point<std::chrono::steady_clock> start =
-            std::chrono::steady_clock::now();
-    f(); // run process
-    const auto end = std::chrono::steady_clock::now();
-    std::cout << actionName << " in " << (end - start) / 1ms << "ms.\n";
-}
-
-namespace internal {
-    //! \brief Dispatch a lambda on a range neighbors query over either the KnnGraph or the KdTree
-    template <typename Functor>
-    void doOnRangeNeighbors(const int i, const Functor& f) {
-        if (useKnnGraph)
-            f(knnGraph->rangeNeighbors(i, NSize));
-        else
-            f(tree.rangeNeighbors(i, NSize));
-    }
-
-    //! \brief Dispatch a lambda on a range neighbors query over either the KnnGraph or the KdTree
-    template <typename Functor>
-    void doOnKNeighbors(const int i, const Functor& f) {
-        f(tree.kNearestNeighbors(i, kNN));
-    }
-}
-
-//! \brief Dispatch a lambda on either a range or a knn query depending on the UI.
-template <typename Functor>
-void doOnNeighbors(const int i, const Functor& f) {
-    useRangeNei ? internal::doOnRangeNeighbors(i,f) : internal::doOnKNeighbors(i, f);
-}
-
+using namespace Ponca;
+using Scalar     = Context::Scalar;
+using VectorType = Context::VectorType;
 
 /// Show in polyscope the euclidean neighborhood of the selected point (iVertexSource), with smooth weighting function
 void colorizeEuclideanNeighborhood() {
-    int nvert = int(tree.samples().size());
+    int nvert = int(context.tree.samples().size());
     Eigen::VectorXd closest ( nvert );
     closest.setZero();
 
-    SmoothWeightFunc w(tree.points()[iVertexSource], NSize );
+    Context::SmoothWeightFunc w(context.tree.points()[context.iVertexSource], context.NSize );
 
-    closest(iVertexSource) = 2;
-    internal::doOnRangeNeighbors(iVertexSource, [w, &closest](auto &&neighborhood){
+    closest(context.iVertexSource) = 2;
+    context.doOnRangeNeighbors(context.iVertexSource, [w, &closest](auto &&neighborhood){
         for (int j : neighborhood){
-            const auto &q = tree.points()[j];
+            const auto &q = context.tree.points()[j];
             closest(j) = w( q ).first;
         }
     });
 
-    cloud->addScalarQuantity(  "range neighborhood", closest);
+    context.cloud->addScalarQuantity(  "range neighborhood", closest);
 }
 
 /// Show in polyscope the knn neighborhood of the selected point (iVertexSource)
 void colorizeKnn() {
-    int nvert = int(tree.samples().size());
+    int nvert = int(context.tree.samples().size());
     Eigen::VectorXd closest ( nvert );
     closest.setZero();
 
-    closest(iVertexSource) = 2;
-    internal::doOnKNeighbors(iVertexSource, [&closest](auto&& neighborhood){
+    closest(context.iVertexSource) = 2;
+    context.doOnKNeighbors(context.iVertexSource, [&closest](auto&& neighborhood){
         for (int j : neighborhood){
             closest(j) = 1;
         }
     });
 
-    cloud->addScalarQuantity(  "knn neighborhood", closest);
+    context.cloud->addScalarQuantity(  "knn neighborhood", closest);
 }
 
 /// Recompute K-Neighbor graph
 void recomputeKnnGraph() {
     measureTime("[Ponca] Build KnnGraph", []() {
-        delete knnGraph;
-        knnGraph = new KnnGraph(tree, kNNGraphK);
+        delete context.knnGraph;
+        context.knnGraph = new Context::KnnGraph(context.tree, context.kNNGraphK);
     });
 }
 
-using FitDry = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::DryFit>;
+using FitDry = Ponca::Basket<Context::PPAdapter, Context::SmoothWeightFunc, Ponca::DryFit>;
 
-using FitPlane = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::CovariancePlaneFit>;
+using FitPlane = Ponca::Basket<Context::PPAdapter, Context::SmoothWeightFunc, Ponca::CovariancePlaneFit>;
 using FitPlaneDiff = Ponca::BasketDiff<
         FitPlane,
         Ponca::DiffType::FitSpaceDer,
         Ponca::CovariancePlaneDer,
         Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator>;
 
-using FitAPSS = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>;
+using FitAPSS = Ponca::Basket<Context::PPAdapter, Context::SmoothWeightFunc, Ponca::OrientedSphereFit>;
 using FitAPSSDiff = Ponca::BasketDiff<
         FitAPSS,
         Ponca::DiffType::FitSpaceDer,
@@ -155,24 +89,24 @@ using FitASODiff = Ponca::BasketDiff<
         Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator,
         Ponca::WeingartenCurvatureEstimatorDer>;
 
-using FitCNCUniform = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::UniformGeneration>;
-using FitCNCIndep   = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::IndependentGeneration>;
-using FitCNCHex     = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::HexagramGeneration>;
-using FitCNCAvgHex  = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::AvgHexagramGeneration>;
+using FitCNCUniform = Ponca::CNC<Context::PPAdapter, Ponca::TriangleGenerationMethod::UniformGeneration>;
+using FitCNCIndep   = Ponca::CNC<Context::PPAdapter, Ponca::TriangleGenerationMethod::IndependentGeneration>;
+using FitCNCHex     = Ponca::CNC<Context::PPAdapter, Ponca::TriangleGenerationMethod::HexagramGeneration>;
+using FitCNCAvgHex  = Ponca::CNC<Context::PPAdapter, Ponca::TriangleGenerationMethod::AvgHexagramGeneration>;
 
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
 template<typename FitT, typename Functor>
 void processPointCloudMLS(const typename FitT::Scalar t, const Functor& f){
 
-    Ponca::MLSEvaluationScheme<Scalar> mls_evaluation_scheme (mlsIter, Scalar(mlsEpsilon));
+    Ponca::MLSEvaluationScheme<Scalar> mls_evaluation_scheme (context.mlsIter, Scalar(context.mlsEpsilon));
 #pragma omp parallel for private (mls_evaluation_scheme)
-    for (int i = 0; i < tree.samples().size(); ++i) {
+    for (int i = 0; i < context.tree.samples().size(); ++i) {
         FitT fit;
-        fit.setNeighborFilter({tree.points()[i], t});
+        fit.setNeighborFilter({context.tree.points()[i], t});
 
-        doOnNeighbors(i, [&](const auto& rangeNeighbors){
-            mls_evaluation_scheme.computeWithIds(fit, rangeNeighbors, tree.points());
+        context.doOnNeighbors(i, [&](const auto& rangeNeighbors){
+            mls_evaluation_scheme.computeWithIds(fit, rangeNeighbors, context.tree.points());
         });
 
         if (fit.isStable()) {
@@ -188,18 +122,18 @@ void processPointCloudMLS(const typename FitT::Scalar t, const Functor& f){
 template<typename FitT, typename Functor>
 void processPointCloudCNC(const typename FitT::Scalar t, const Functor& f){
 #pragma omp parallel for
-    for (int i = 0; i < tree.samples().size(); ++i) {
+    for (int i = 0; i < context.tree.samples().size(); ++i) {
         FitT fit;
-        fit.setNeighborFilter({tree.points()[i], t});
+        fit.setNeighborFilter({context.tree.points()[i], t});
 
         std::vector<int> neighbors;
         neighbors.push_back(i);
-        doOnNeighbors(i, [&neighbors](auto &&neighborhood){
+        context.doOnNeighbors(i, [&neighbors](auto &&neighborhood){
             for (int j : neighborhood){
                 neighbors.push_back(j);
             }
         });
-        fit.computeWithIds(neighbors, tree.points());
+        fit.computeWithIds(neighbors, context.tree.points());
 
         if (fit.isStable()) {
             f(i, fit);
@@ -213,13 +147,13 @@ void processPointCloudCNC(const typename FitT::Scalar t, const Functor& f){
 /// \tparam FitT Defines the type of estimator used for computation
 template<typename FitT>
 void estimateDifferentialQuantities(const std::string& name) {
-    int nvert = int(tree.samples().size());
+    int nvert = int(context.tree.samples().size());
     Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
     Eigen::MatrixXd normal( nvert, 3 ), dmin( nvert, 3 ), dmax( nvert, 3 ), proj( nvert, 3 );
 
     measureTime( "[Ponca] Compute differential quantities using " + name,
                  [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]() {
-        processPointCloudMLS<FitT>(NSize,
+        processPointCloudMLS<FitT>(context.NSize,
                                 [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]
                                 (const int i, const FitT& fit){
 
@@ -229,21 +163,22 @@ void estimateDifferentialQuantities(const std::string& name) {
             dmin.row( i ) = fit.kminDirection();
             dmax.row( i ) = fit.kmaxDirection();
             normal.row(i) = fit.primitiveGradient();
-            proj.row(i)   = fit.getNeighborFilter().evalPos() - tree.points()[i].pos();
+            proj.row(i)   = fit.getNeighborFilter().evalPos() - context.tree.points()[i].pos();
         });
     });
 
     measureTime( "[Polyscope] Update differential quantities",
                  [&name, &mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj]() {
-                     cloud->addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
-                     cloud->addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
-                     cloud->addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
-                     cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
-                        Scalar(2) * pointRadius);
-                     cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
-                        Scalar(2) * pointRadius);
-                    cloud->addVectorQuantity(name + " - normal", normal)->setVectorLengthScale(Scalar(2) * pointRadius);
-                    cloud->addVectorQuantity(name + " - projection", proj, polyscope::VectorType::AMBIENT);
+                     context.cloud->addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
+                     context.cloud->addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
+                     context.cloud->addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
+                     context.cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
+                        Scalar(2) * context.pointRadius);
+                     context.cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
+                        Scalar(2) * context.pointRadius);
+                    context.cloud->addVectorQuantity(name + " - normal", normal)->setVectorLengthScale(
+                        Scalar(2) * context.pointRadius);
+                    context.cloud->addVectorQuantity(name + " - projection", proj, polyscope::VectorType::AMBIENT);
 
                  });
 }
@@ -252,13 +187,13 @@ void estimateDifferentialQuantities(const std::string& name) {
 /// \tparam FitT Defines the type of estimator used for computation
 template<typename FitT>
 void estimateDifferentialQuantitiesCNC(const std::string& name) {
-    int nvert = int(tree.samples().size());
+    int nvert = int(context.tree.samples().size());
     Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
     Eigen::MatrixXd dmin( nvert, 3 ), dmax( nvert, 3 );
 
     measureTime( "[Ponca] Compute differential quantities using " + name,
                  [&mean, &kmin, &kmax, &dmin, &dmax]() {
-        processPointCloudCNC<FitT>(NSize,
+        processPointCloudCNC<FitT>(context.NSize,
                                 [&mean, &kmin, &kmax, &dmin, &dmax]
                                 (const int i, const FitT& fit){
 
@@ -272,13 +207,13 @@ void estimateDifferentialQuantitiesCNC(const std::string& name) {
 
     measureTime( "[Polyscope] Update differential quantities",
                  [&name, &mean, &kmin, &kmax, &dmin, &dmax]() {
-                     cloud->addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
-                     cloud->addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
-                     cloud->addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
-                     cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
-                        Scalar(2) * pointRadius);
-                     cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
-                        Scalar(2) * pointRadius);
+                     context.cloud->addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
+                     context.cloud->addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
+                     context.cloud->addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
+                     context.cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
+                        Scalar(2) * context.pointRadius);
+                     context.cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
+                        Scalar(2) * context.pointRadius);
                  });
 }
 
@@ -286,7 +221,7 @@ void estimateDifferentialQuantitiesCNC(const std::string& name) {
 /// This function is useful to monitor the KdTree performances
 inline void mlsDryRun() {
     measureTime( "[Ponca] Dry run MLS ", []() {
-        processPointCloudMLS<FitDry>( NSize, [](int, const FitDry&){ });
+        processPointCloudMLS<FitDry>( context.NSize, [](int, const FitDry&){ });
     });
 }
 
@@ -296,9 +231,10 @@ template<typename FitT, bool isSigned = true>
 Scalar evalScalarField_impl(const VectorType& input_pos)
 {
     FitT fit;
-    fit.setNeighborFilter({input_pos, NSize}); // weighting function using current pos (not input pos)
-    Ponca::MLSEvaluationScheme<Scalar> mls_evaluation_scheme (mlsIter, Scalar(mlsEpsilon));
-    auto res = mls_evaluation_scheme.computeWithIds(fit, tree.rangeNeighbors(input_pos, NSize), tree.points());
+    fit.setNeighborFilter({input_pos, context.NSize}); // weighting function using current pos (not input pos)
+    Ponca::MLSEvaluationScheme<Scalar> mls_evaluation_scheme (context.mlsIter, Scalar(context.mlsEpsilon));
+    auto res = mls_evaluation_scheme.computeWithIds(fit, context.tree.rangeNeighbors(input_pos, context.NSize),
+        context.tree.points());
 
     if(!fit.isStable()) {
         // not enough neighbors (if far from the point cloud)
@@ -349,18 +285,18 @@ bool loadFile(const std::string& path)
         }
     }
 
-    cloudV = newCloud;
+    context.cloudV = newCloud;
     // no need to delete the previous cloud, polyscope handles it
-    cloud = polyscope::registerPointCloud("cloud", cloudV);
-    cloudN = newNormals;
+    context.cloud = polyscope::registerPointCloud("cloud", context.cloudV);
+    context.cloudN = newNormals;
 
     // Bounding Box (used in the slicer)
-    lower = cloudV.colwise().minCoeff();
-    upper = cloudV.colwise().maxCoeff();
+    context.lower = context.cloudV.colwise().minCoeff();
+    context.upper = context.cloudV.colwise().maxCoeff();
 
     // Build Ponca KdTree
     measureTime( "[Ponca] Build KdTree", []() {
-        buildKdTree(cloudV, cloudN, tree);
+        buildKdTree(context.cloudV, context.cloudN, context.tree);
     });
 
 
@@ -370,29 +306,29 @@ bool loadFile(const std::string& path)
         constexpr Scalar pointSizeFactor = 0.25;
         constexpr Scalar scaleFactor = 5;
 #pragma omp parallel for
-        for (int i = 0; i < tree.samples().size(); ++i)
+        for (int i = 0; i < context.tree.samples().size(); ++i)
         {
             Scalar pointMDist = 0;
-            VectorType p = tree.points()[i].pos();
-            internal::doOnKNeighbors(i, [&pointMDist,p](auto&& neighborhood){
+            VectorType p = context.tree.points()[i].pos();
+            ::internal::doOnKNeighbors(i, [&pointMDist,p](auto&& neighborhood){
                 for (int j : neighborhood){
-                    pointMDist += (p-tree.points()[j].pos()).norm();
+                    pointMDist += (p-context.tree.points()[j].pos()).norm();
                 }
             });
 #pragma omp critical
-            cloudMDist += pointMDist/Scalar(kNN);
+            cloudMDist += pointMDist/Scalar(context.kNN);
         }
-        pointRadius = pointSizeFactor * cloudMDist/Scalar(tree.samples().size());
-        NSize = scaleFactor * cloudMDist/Scalar(tree.samples().size());
+        context.pointRadius = pointSizeFactor * cloudMDist/Scalar(context.tree.samples().size());
+        context.NSize = scaleFactor * cloudMDist/Scalar(context.tree.samples().size());
     });
 
 
 
     // Register the point cloud with Polyscope
-    cloud->setPointRadius(pointRadius);
+    context.cloud->setPointRadius(context.pointRadius);
     polyscope::requestRedraw();
 
-    useKnnGraph = false;
+    context.useKnnGraph = false;
 
     std::cout << "[Poncascope] Loading file succeeded"<< std::endl;
 
@@ -407,7 +343,7 @@ void callback() {
     // open Dialog Simple
     if (ImGui::Button("Open File Dialog")) {
         IGFD::FileDialogConfig config;
-        config.path = lastPath;
+        config.path = context.lastPath;
         ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".obj", config);
     }
     // display
@@ -416,7 +352,7 @@ void callback() {
             std::string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
             // std::string filePath = ImGuiFileDialog::Instance()->GetCurrentPath();
 
-            if (loadFile(filePathName)) lastPath = filePathName;
+            if (loadFile(filePathName)) context.lastPath = filePathName;
         }
 
         // close
@@ -424,35 +360,35 @@ void callback() {
     }
 
     ImGui::Text("Acceleration Structure");
-    bool knnGraphUIChanged = ImGui::Checkbox("Use KnnGraph", &useKnnGraph);
-    if (useKnnGraph)
+    bool knnGraphUIChanged = ImGui::Checkbox("Use KnnGraph", &context.useKnnGraph);
+    if (context.useKnnGraph)
     {
         ImGui::SameLine();
-        if (ImGui::InputInt("Graph k", &kNNGraphK) || knnGraphUIChanged) // recompute when activated or changed
+        if (ImGui::InputInt("Graph k", &context.kNNGraphK) || knnGraphUIChanged) // recompute when activated or changed
             recomputeKnnGraph();
     }
 
     ImGui::Separator();
     ImGui::Text("Neighborhood queries");
-    ImGui::Checkbox("Use Range Queries", &useRangeNei);
+    ImGui::Checkbox("Use Range Queries", &context.useRangeNei);
     ImGui::SameLine();
-    if (useRangeNei)
-        ImGui::InputFloat("neighborhood range size", &NSize);
+    if (context.useRangeNei)
+        ImGui::InputFloat("neighborhood range size", &context.NSize);
     else
-        ImGui::InputInt("k-neighborhood size", &kNN);
+        ImGui::InputInt("k-neighborhood size", &context.kNN);
 
     ImGui::Separator();
-    ImGui::InputInt("source vertex", &iVertexSource);
+    ImGui::InputInt("source vertex", &context.iVertexSource);
     ImGui::SameLine();
-    if (useRangeNei) {
+    if (context.useRangeNei) {
         if (ImGui::Button("show euclidean nei")) colorizeEuclideanNeighborhood();
     }
     else
         if (ImGui::Button("show knn")) colorizeKnn();
 
     ImGui::Separator();
-    ImGui::InputInt("Nb MLS Iterations", &mlsIter);
-    ImGui::InputFloat("MLS Epsilon", &mlsEpsilon);
+    ImGui::InputInt("Nb MLS Iterations", &context.mlsIter);
+    ImGui::InputFloat("MLS Epsilon", &context.mlsEpsilon);
     ImGui::Separator();
 
     ImGui::Text("Differential estimators");
@@ -483,11 +419,11 @@ void callback() {
     ImGui::Separator();
 
     ImGui::Text("Implicit function slicer");
-    ImGui::SliderFloat("Slice", &slice, 0, 1.0); ImGui::SameLine();
-    ImGui::Checkbox("HD", &isHDSlicer);
-    ImGui::RadioButton("X axis", &axis, 0); ImGui::SameLine();
-    ImGui::RadioButton("Y axis", &axis, 1); ImGui::SameLine();
-    ImGui::RadioButton("Z axis", &axis, 2);
+    ImGui::SliderFloat("Slice", &context.slice, 0, 1.0); ImGui::SameLine();
+    ImGui::Checkbox("HD", &context.isHDSlicer);
+    ImGui::RadioButton("X axis", &context.axis, 0); ImGui::SameLine();
+    ImGui::RadioButton("Y axis", &context.axis, 1); ImGui::SameLine();
+    ImGui::RadioButton("Z axis", &context.axis, 2);
     const char* items[] = { "ASO", "APSS", "PSS"};
     static int item_current = 0;
     ImGui::Combo("Fit function", &item_current, items, IM_ARRAYSIZE(items));
@@ -495,9 +431,9 @@ void callback() {
     {
       switch(item_current)
       {
-        case 0: registerRegularSlicer("slicer", evalScalarField_impl<FitASO, true>   , lower, upper, isHDSlicer?1024:256, axis, slice); break;
-        case 1: registerRegularSlicer("slicer", evalScalarField_impl<FitAPSS, true>  , lower, upper, isHDSlicer?1024:256, axis, slice); break;
-        case 2: registerRegularSlicer("slicer", evalScalarField_impl<FitPlane, false>, lower, upper, isHDSlicer?1024:256, axis, slice); break;
+        case 0: registerRegularSlicer("slicer", evalScalarField_impl<FitASO, true>   , context.lower, context.upper, context.isHDSlicer?1024:256, context.axis, context.slice); break;
+        case 1: registerRegularSlicer("slicer", evalScalarField_impl<FitAPSS, true>  , context.lower, context.upper, context.isHDSlicer?1024:256, context.axis, context.slice); break;
+        case 2: registerRegularSlicer("slicer", evalScalarField_impl<FitPlane, false>, context.lower, context.upper, context.isHDSlicer?1024:256, context.axis, context.slice); break;
       }
     }
     ImGui::SameLine();
@@ -527,6 +463,6 @@ int main(int argc, char** argv) {
     // Show the gui
     polyscope::show();
 
-    delete knnGraph;
+    delete context.knnGraph;
     return EXIT_SUCCESS;
 }
