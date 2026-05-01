@@ -5,6 +5,8 @@
 
 #include "polyscope/point_cloud.h"
 
+#include "ImGuiFileDialog.h"
+
 #include <Ponca/Fitting>
 #include <Ponca/SpatialPartitioning>
 #include "poncaAdapters.hpp"
@@ -30,16 +32,16 @@ KnnGraph* knnGraph {nullptr};
 polyscope::PointCloud* cloud = nullptr;
 
 // Options for algorithms
-int iVertexSource  = 7;     /// < id of the selected point
-int kNN            = 10;    /// < neighborhood size (knn)
-int kNNGraphK      = 6;     /// < number of neighbors used to compute the knngraph
-float NSize        = 0.1f;  /// < neighborhood size (euclidean)
-int mlsIter        = 1;     /// < number of moving least squares iterations
-float mlsEpsilon   = 0.001f; /// < motion distance stopping criterion for moving least squares
-Scalar pointRadius = 0.005; /// < display radius of the point cloud
-bool useKnnGraph   = false; /// < use k-neighbor graph instead of kdtree
-bool useRangeNei   = true;  /// < use range neighbors for estimators (or knn queries otherwise)
-
+int iVertexSource    = 7;     /// < id of the selected point
+int kNN              = 10;    /// < neighborhood size (knn)
+int kNNGraphK        = 6;     /// < number of neighbors used to compute the knngraph
+float NSize          = 0.1f;  /// < neighborhood size (euclidean)
+int mlsIter          = 1;     /// < number of moving least squares iterations
+float mlsEpsilon     = 0.001f; /// < motion distance stopping criterion for moving least squares
+Scalar pointRadius   = 0.005; /// < display radius of the point cloud
+bool useKnnGraph     = false; /// < use k-neighbor graph instead of kdtree
+bool useRangeNei     = true;  /// < use range neighbors for estimators (or knn queries otherwise)
+std::string lastPath = ".";   /// < last path used in file loader
 
 
 // Slicer
@@ -308,10 +310,124 @@ Scalar evalScalarField_impl(const VectorType& input_pos)
     return current_value;
 }
 
+
+bool loadFile(const std::string& path)
+{
+    std::cout << "[Poncascope] Load file " << path << std::endl;
+
+    std::cout << cloudV.size() << std::endl;
+    std::cout << cloudN.size() << std::endl;
+    // first block: output cloudV and cloudN
+    Eigen::MatrixXd newCloud, newNormals;
+    {
+        bool worked;
+        Eigen::MatrixXi meshF;
+        measureTime( "[libIGL] Load Armadillo", [path, &newCloud, &meshF, &worked]()
+        // For convenience: use libIGL to load a mesh, and store only the vertices location and normal vector
+        {
+            const std::string filename = path.c_str();
+            worked = igl::readOBJ(filename, newCloud, meshF);
+        } );
+
+        if (worked) {
+            if (meshF.cols()==3) // we have a triangle mesh
+            {
+                igl::per_vertex_normals(newCloud, meshF, newNormals);
+            }
+        }
+        else {
+            std::cerr << "[libIGL] An error occurred when loading file " << path
+                      << std::endl;
+            return false;
+        }
+    }
+
+    // Check if normals have been properly loaded
+    /// \fixme : should not abort, but rather compute normals using Ponca.
+    {
+        int nbUnitNormal = int(newNormals.rowwise().squaredNorm().sum());
+        if ( nbUnitNormal != newCloud.rows() ) {
+            std::cerr << "[Poncascope] Point cloud has no normals, aborting" << std::endl;
+            return false;
+        }
+    }
+
+    cloudV = newCloud;
+    // no need to delete the previous cloud, polyscope handles it
+    cloud = polyscope::registerPointCloud("cloud", cloudV);
+    cloudN = newNormals;
+
+    std::cout << cloudV.size() << std::endl;
+    std::cout << cloudN.size() << std::endl;
+
+    // Bounding Box (used in the slicer)
+    lower = cloudV.colwise().minCoeff();
+    upper = cloudV.colwise().maxCoeff();
+
+    // Build Ponca KdTree
+    measureTime( "[Ponca] Build KdTree", []() {
+        buildKdTree(cloudV, cloudN, tree);
+    });
+
+
+    // Compute default point and neighborhood size according to the mean density
+    measureTime( "[Ponca] Compute point radius according to mean knn distance", []() {
+        Scalar cloudMDist = 0;
+        constexpr Scalar pointSizeFactor = 0.25;
+        constexpr Scalar scaleFactor = 5;
+#pragma omp parallel for
+        for (int i = 0; i < tree.samples().size(); ++i)
+        {
+            Scalar pointMDist = 0;
+            VectorType p = tree.points()[i].pos();
+            internal::doOnKNeighbors(i, [&pointMDist,p](auto&& neighborhood){
+                for (int j : neighborhood){
+                    pointMDist += (p-tree.points()[j].pos()).norm();
+                }
+            });
+#pragma omp critical
+            cloudMDist += pointMDist/Scalar(kNN);
+        }
+        pointRadius = pointSizeFactor * cloudMDist/Scalar(tree.samples().size());
+        NSize = scaleFactor * cloudMDist/Scalar(tree.samples().size());
+    });
+
+
+
+    // Register the point cloud with Polyscope
+    cloud->setPointRadius(pointRadius);
+    polyscope::requestRedraw();
+
+    useKnnGraph = false;
+
+    std::cout << "[Poncascope] Loading file succeeded"<< std::endl;
+
+    return true;
+}
+
 /// Define Polyscope callbacks
 void callback() {
 
     ImGui::PushItemWidth(100);
+
+    // open Dialog Simple
+    if (ImGui::Button("Open File Dialog")) {
+        IGFD::FileDialogConfig config;
+        config.path = lastPath;
+        ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".obj", config);
+    }
+    // display
+    if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey")) {
+        if (ImGuiFileDialog::Instance()->IsOk()) { // action if OK
+            std::string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
+            // std::string filePath = ImGuiFileDialog::Instance()->GetCurrentPath();
+
+            if (loadFile(filePathName)) lastPath = filePathName;
+        }
+
+        // close
+        ImGuiFileDialog::Instance()->Close();
+    }
 
     ImGui::Text("Acceleration Structure");
     bool knnGraphUIChanged = ImGui::Checkbox("Use KnnGraph", &useKnnGraph);
@@ -404,36 +520,7 @@ int main(int /*argc*/, char** /*argv*/) {
     // Initialize polyscope
     polyscope::init();
 
-    measureTime( "[libIGL] Load Armadillo", []()
-    // For convenience: use libIGL to load a mesh, and store only the vertices location and normal vector
-    {
-        const std::string filename = "assets/armadillo.obj";
-        Eigen::MatrixXi meshF;
-        igl::readOBJ(filename, cloudV, meshF);
-        igl::per_vertex_normals(cloudV, meshF, cloudN);
-    } );
-
-    // Check if normals have been properly loaded
-    int nbUnitNormal = int(cloudN.rowwise().squaredNorm().sum());
-    if ( nbUnitNormal != cloudV.rows() ) {
-        std::cerr << "[libIGL] An error occurred when computing the normal vectors from the mesh. Aborting..."
-                  << std::endl;
-        return EXIT_FAILURE;
-    }
-
-    //Bounding Box (used in the slicer)
-    lower = cloudV.colwise().minCoeff();
-    upper = cloudV.colwise().maxCoeff();
-
-    // Build Ponca KdTree
-    measureTime( "[Ponca] Build KdTree", []() {
-        buildKdTree(cloudV, cloudN, tree);
-    });
-
-    // Register the point cloud with Polyscope
-    std::cout << "Starting polyscope... " << std::endl;
-    cloud = polyscope::registerPointCloud("cloud", cloudV);
-    cloud->setPointRadius(pointRadius);
+    loadFile("assets/armadillo.obj");
 
     // Add the callback
     polyscope::state::userCallback = callback;
