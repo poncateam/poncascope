@@ -61,7 +61,7 @@ bool loadFile(const std::string& path, Context& context)
     std::filesystem::path filePath(path);
     bool loaded = false;
 
-    const std::string ext = filePath.extension();
+    const std::string ext = filePath.extension().string();
     switch (hash(ext.c_str()))
     {
     case hash(".obj"):
