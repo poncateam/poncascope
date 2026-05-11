@@ -4,6 +4,7 @@
 #include <igl/per_vertex_normals.h>
 
 #include "polyscope/point_cloud.h"
+#include "happly.h"
 
 #include "ImGuiFileDialog.h"
 

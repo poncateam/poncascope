@@ -80,6 +80,9 @@ target_include_directories(poncascope PUBLIC
                             "${CMAKE_CURRENT_SOURCE_DIR}/external/libigl/include"
                             "${CMAKE_CURRENT_SOURCE_DIR}/external/ponca/")
 
+message("Use Happly as provided by polyscope")
+target_include_directories(poncascope PUBLIC
+                            "${CMAKE_CURRENT_SOURCE_DIR}/external/polyscope/deps/happly")
 # Link settings
 target_link_libraries(poncascope polyscope ${Eigen_Deps} ${OpenMP_link_libraries} ImGuiFileDialog)
 
