@@ -139,6 +139,7 @@ bool loadFile(const std::string& path, Context& context)
 
 bool saveFile(const std::string& path, Context& context)
 {
+
     return true;
 }
 
@@ -148,8 +149,7 @@ void callback_io(Context& context)
     if (ImGui::Button("Open File Dialog")) {
         IGFD::FileDialogConfig config;
         config.path = context.loadPath;
-        config.flags = ImGuiFileDialogFlags_Modal
-            | ImGuiFileDialogFlags_DisableCreateDirectoryButton
+        config.flags = ImGuiFileDialogFlags_DisableCreateDirectoryButton
             | ImGuiFileDialogFlags_ReadOnlyFileNameField;
         ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".obj", config);
     }
@@ -180,8 +180,7 @@ void callback_io(Context& context)
                 context.savePath = filePath.string();
             }
             config.path = context.savePath;
-            config.flags = ImGuiFileDialogFlags_Modal
-                | ImGuiFileDialogFlags_ConfirmOverwrite;
+            config.flags = ImGuiFileDialogFlags_ConfirmOverwrite;
             ImGuiFileDialog::Instance()->OpenDialog("SaveFileDlgKey", "Save File as...", ".ply", config);
         }
         // display
@@ -189,13 +188,29 @@ void callback_io(Context& context)
             if (ImGuiFileDialog::Instance()->IsOk()) { // action if OK
                 std::string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
                 // std::string filePath = ImGuiFileDialog::Instance()->GetCurrentPath();
-
-                if (saveFile(filePathName, context)) context.savePath = filePathName;
-            }
-
-            // close
-            ImGuiFileDialog::Instance()->Close();
+                context.savePath = filePathName;
+                ImGuiFileDialog::Instance()->Close();
+                ImGui::OpenPopup("Choose export options");
+            } else
+                ImGuiFileDialog::Instance()->Close();
         }
+    }
+
+    if (ImGui::BeginPopupModal("Choose export options", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::SeparatorText("Scalar quantities");
+        for (auto& handler: context.scalarQuantites) ImGui::Checkbox(handler.name.c_str(), &(handler.save));
+
+        ImGui::SeparatorText("Vector quantities");
+        for (auto& handler: context.vectorQuantites) ImGui::Checkbox(handler.name.c_str(), &(handler.save));
+
+        if (ImGui::Button("Save")) {
+            saveFile(context.savePath, context);
+            ImGui::CloseCurrentPopup();
+        }
+        if (ImGui::Button("Cancel")) {
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
     }
 }
 
