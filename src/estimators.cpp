@@ -143,14 +143,14 @@ inline void mlsDryRun(Context& context) {
 
 void callback_estimators(Context& context)
 {
-    ImGui::Separator();
-    ImGui::InputInt("Nb MLS Iterations", &context.mlsIter);
-    ImGui::InputFloat("MLS Epsilon", &context.mlsEpsilon);
+    ImGui::SeparatorText("Utils");
+    if (ImGui::Button("Dry Run"))  mlsDryRun(context);
     ImGui::Separator();
 
-    ImGui::Text("Differential estimators");
-    if (ImGui::Button("Dry Run"))  mlsDryRun(context);
+    ImGui::Text("MLS");
+    ImGui::InputInt("Nb Iterations", &context.mlsIter);
     ImGui::SameLine();
+    ImGui::InputFloat("Epsilon", &context.mlsEpsilon);
     if (ImGui::Button("Plane (PCA)")) // Compute curvature using Covariance Plane fitting
         estimateDifferentialQuantities<Context::FitPlaneDiff>("PSS",context);
     ImGui::SameLine();

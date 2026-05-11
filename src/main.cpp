@@ -18,10 +18,25 @@ void callback() {
 
     ImGui::PushItemWidth(100);
 
-    callback_io(context);
-    callback_datastructures(context);
-    callback_estimators(context);
-    callback_slicer(context);
+    if (ImGui::BeginTabBar("Controls")) {
+        if (ImGui::BeginTabItem("IO")) {
+            callback_io(context);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Datastructures")) {
+            callback_datastructures(context);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Differential estimation")) {
+            callback_estimators(context);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("2D sliced")) {
+            callback_slicer(context);
+            ImGui::EndTabItem();
+        }
+        ImGui::EndTabBar();
+    }
 
     ImGui::PopItemWidth();
 }
