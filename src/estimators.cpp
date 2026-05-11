@@ -84,16 +84,16 @@ void estimateDifferentialQuantities(const std::string& name, Context& context) {
 
     measureTime( "[Polyscope] Update differential quantities",
                  [&name, &mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj, &context]() {
-                     context.cloud->addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
-                     context.cloud->addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
-                     context.cloud->addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
-                     context.cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
+                     context.addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
+                     context.addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
+                     context.addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
+                     context.addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
                         Scalar(2) * context.pointRadius);
-                     context.cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
+                     context.addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
                         Scalar(2) * context.pointRadius);
-                    context.cloud->addVectorQuantity(name + " - normal", normal)->setVectorLengthScale(
+                    context.addVectorQuantity(name + " - normal", normal)->setVectorLengthScale(
                         Scalar(2) * context.pointRadius);
-                    context.cloud->addVectorQuantity(name + " - projection", proj, polyscope::VectorType::AMBIENT);
+                    context.addVectorQuantity(name + " - projection", proj, polyscope::VectorType::AMBIENT);
 
                  });
 }
@@ -122,12 +122,12 @@ void estimateDifferentialQuantitiesCNC(const std::string& name, Context& context
 
     measureTime( "[Polyscope] Update differential quantities",
                  [&name, &mean, &kmin, &kmax, &dmin, &dmax, &context]() {
-                     context.cloud->addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
-                     context.cloud->addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
-                     context.cloud->addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
-                     context.cloud->addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
+                     context.addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
+                     context.addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
+                     context.addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
+                     context.addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
                         Scalar(2) * context.pointRadius);
-                     context.cloud->addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
+                     context.addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
                         Scalar(2) * context.pointRadius);
                  });
 }

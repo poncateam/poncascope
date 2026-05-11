@@ -20,7 +20,7 @@ void colorizeEuclideanNeighborhood(Context& context) {
         }
     });
 
-    context.cloud->addScalarQuantity(  "range neighborhood", closest);
+    context.addScalarQuantity(  "range neighborhood", closest);
 }
 
 /// Show in polyscope the knn neighborhood of the selected point (iVertexSource)
@@ -36,7 +36,7 @@ void colorizeKnn(Context& context) {
         }
     });
 
-    context.cloud->addScalarQuantity(  "knn neighborhood", closest);
+    context.addScalarQuantity(  "knn neighborhood", closest);
 }
 
 /// Recompute K-Neighbor graph

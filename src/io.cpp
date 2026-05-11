@@ -86,6 +86,8 @@ bool loadFile(const std::string& path, Context& context)
 
     context.cloudV = newCloud;
     // no need to delete the previous cloud, polyscope handles it
+    context.scalarQuantites.clear();
+    context.vectorQuantites.clear();
     context.cloud = polyscope::registerPointCloud("cloud", context.cloudV);
     context.cloudN = newNormals;
 

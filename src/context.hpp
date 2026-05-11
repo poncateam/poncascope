@@ -6,10 +6,8 @@
 
 #include <chrono>
 
-namespace polyscope
-{
-    class PointCloud;
-}
+#include "polyscope/scalar_quantity.h"
+#include "polyscope/point_cloud.h"
 
 struct Context
 {
@@ -72,6 +70,40 @@ struct Context
     std::string loadPath = ".";   /// < last path used in file loader
     std::string savePath = "";   /// < last path used in file loader
 
+    // An abstraction of the polyscope quantities that is used to track fields and simplify saving
+    template <typename QtyType>
+    struct QuantityHandler
+    {
+        QtyType* ptr {nullptr};
+        std::string name;
+        bool save {true};
+    };
+    using ScalarQuantityHandler = QuantityHandler<polyscope::PointCloudScalarQuantity>;
+    std::vector<ScalarQuantityHandler> scalarQuantites;
+    using VectorQuantityHandler = QuantityHandler<polyscope::PointCloudVectorQuantity>;
+    std::vector<VectorQuantityHandler> vectorQuantites;
+
+    template <typename T>
+    polyscope::PointCloudScalarQuantity* addScalarQuantity(std::string name, const T& data,
+                                                           polyscope::DataType type = polyscope::DataType::STANDARD)
+    {
+        ScalarQuantityHandler h;
+        h.ptr = cloud->addScalarQuantity(name, data);
+        h.name = name;
+        scalarQuantites.push_back(h);
+        return h.ptr;
+    }
+
+    template <typename T>
+    polyscope::PointCloudVectorQuantity* addVectorQuantity(std::string name, const T& data,
+                                                           polyscope::VectorType type = polyscope::VectorType::STANDARD)
+    {
+        VectorQuantityHandler h;
+        h.ptr = cloud->addVectorQuantity(name, data, type);
+        h.name = name;
+        vectorQuantites.push_back(h);
+        return h.ptr;
+    }
 
     // Slicer
     float slice    = 0.f;
