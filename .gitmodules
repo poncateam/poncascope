@@ -7,3 +7,6 @@
 [submodule "external/libigl"]
 	path = external/libigl
 	url = https://github.com/libigl/libigl.git
+[submodule "external/ImGuiFileDialog"]
+	path = external/ImGuiFileDialog
+	url = https://github.com/aiekick/ImGuiFileDialog.git
