@@ -69,7 +69,8 @@ struct Context
     Scalar pointRadius   = 0.005; /// < display radius of the point cloud
     bool useKnnGraph     = false; /// < use k-neighbor graph instead of kdtree
     bool useRangeNei     = true;  /// < use range neighbors for estimators (or knn queries otherwise)
-    std::string lastPath = ".";   /// < last path used in file loader
+    std::string loadPath = ".";   /// < last path used in file loader
+    std::string savePath = "";   /// < last path used in file loader
 
 
     // Slicer

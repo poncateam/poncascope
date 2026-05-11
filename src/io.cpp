@@ -134,12 +134,20 @@ bool loadFile(const std::string& path, Context& context)
     return true;
 }
 
+bool saveFile(const std::string& path, Context& context)
+{
+    return true;
+}
+
 void callback_io(Context& context)
 {
     // open Dialog Simple
     if (ImGui::Button("Open File Dialog")) {
         IGFD::FileDialogConfig config;
-        config.path = context.lastPath;
+        config.path = context.loadPath;
+        config.flags = ImGuiFileDialogFlags_Modal
+            | ImGuiFileDialogFlags_DisableCreateDirectoryButton
+            | ImGuiFileDialogFlags_ReadOnlyFileNameField;
         ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".obj", config);
     }
     // display
@@ -148,10 +156,43 @@ void callback_io(Context& context)
             std::string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
             // std::string filePath = ImGuiFileDialog::Instance()->GetCurrentPath();
 
-            if (loadFile(filePathName, context)) context.lastPath = filePathName;
+            if (loadFile(filePathName, context)) context.loadPath = filePathName;
         }
 
         // close
         ImGuiFileDialog::Instance()->Close();
     }
+
+    if (context.cloud != nullptr)
+    {
+        ImGui::SameLine();
+        if (ImGui::Button("Save File")) {
+            IGFD::FileDialogConfig config;
+
+            // if never saved before, compute a path according to loaded path
+            if (context.savePath.empty())
+            {
+                std::filesystem::path filePath(context.loadPath);
+                filePath.replace_extension(".ply");
+                context.savePath = filePath.string();
+            }
+            config.path = context.savePath;
+            config.flags = ImGuiFileDialogFlags_Modal
+                | ImGuiFileDialogFlags_ConfirmOverwrite;
+            ImGuiFileDialog::Instance()->OpenDialog("SaveFileDlgKey", "Save File as...", ".ply", config);
+        }
+        // display
+        if (ImGuiFileDialog::Instance()->Display("SaveFileDlgKey")) {
+            if (ImGuiFileDialog::Instance()->IsOk()) { // action if OK
+                std::string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
+                // std::string filePath = ImGuiFileDialog::Instance()->GetCurrentPath();
+
+                if (saveFile(filePathName, context)) context.savePath = filePathName;
+            }
+
+            // close
+            ImGuiFileDialog::Instance()->Close();
+        }
+    }
 }
+
