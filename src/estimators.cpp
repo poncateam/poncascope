@@ -5,8 +5,8 @@
 #include <imgui.h>
 
 using namespace Ponca;
-using Scalar     = Context::Scalar;
-using VectorType = Context::VectorType;
+using Scalar     = Context::Types::Scalar;
+using VectorType = Context::Types::VectorType;
 
 
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
@@ -14,14 +14,14 @@ using VectorType = Context::VectorType;
 template<typename FitT, typename Functor>
 void processPointCloudMLS(const typename FitT::Scalar t, const Functor& f, Context& context){
 
-    Ponca::MLSEvaluationScheme<Scalar> mls_evaluation_scheme (context.mlsIter, Scalar(context.mlsEpsilon));
+    Ponca::MLSEvaluationScheme<Scalar> mls_evaluation_scheme (context.computeOpts.mlsIter, Scalar(context.computeOpts.mlsEpsilon));
 #pragma omp parallel for private (mls_evaluation_scheme)
-    for (int i = 0; i < context.tree.samples().size(); ++i) {
+    for (int i = 0; i < context.asset.tree.samples().size(); ++i) {
         FitT fit;
-        fit.setNeighborFilter({context.tree.points()[i], t});
+        fit.setNeighborFilter({context.asset.tree.points()[i], t});
 
         context.doOnNeighbors(i, [&](const auto& rangeNeighbors){
-            mls_evaluation_scheme.computeWithIds(fit, rangeNeighbors, context.tree.points());
+            mls_evaluation_scheme.computeWithIds(fit, rangeNeighbors, context.asset.tree.points());
         });
 
         if (fit.isStable()) {
@@ -37,9 +37,9 @@ void processPointCloudMLS(const typename FitT::Scalar t, const Functor& f, Conte
 template<typename FitT, typename Functor>
 void processPointCloudCNC(const typename FitT::Scalar t, const Functor& f, Context& context){
 #pragma omp parallel for
-    for (int i = 0; i < context.tree.samples().size(); ++i) {
+    for (int i = 0; i < context.asset.tree.samples().size(); ++i) {
         FitT fit;
-        fit.setNeighborFilter({context.tree.points()[i], t});
+        fit.setNeighborFilter({context.asset.tree.points()[i], t});
 
         std::vector<int> neighbors;
         neighbors.push_back(i);
@@ -48,7 +48,7 @@ void processPointCloudCNC(const typename FitT::Scalar t, const Functor& f, Conte
                 neighbors.push_back(j);
             }
         });
-        fit.computeWithIds(neighbors, context.tree.points());
+        fit.computeWithIds(neighbors, context.asset.tree.points());
 
         if (fit.isStable()) {
             f(i, fit);
@@ -62,13 +62,13 @@ void processPointCloudCNC(const typename FitT::Scalar t, const Functor& f, Conte
 /// \tparam FitT Defines the type of estimator used for computation
 template<typename FitT>
 void estimateDifferentialQuantities(const std::string& name, Context& context) {
-    int nvert = int(context.tree.samples().size());
+    int nvert = int(context.asset.tree.samples().size());
     Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
     Eigen::MatrixXd normal( nvert, 3 ), dmin( nvert, 3 ), dmax( nvert, 3 ), proj( nvert, 3 );
 
     measureTime( "[Ponca] Compute differential quantities using " + name,
                  [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj, &context]() {
-        processPointCloudMLS<FitT>(context.NSize,
+        processPointCloudMLS<FitT>(context.computeOpts.NSize,
                                 [&mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj, &context]
                                 (const int i, const FitT& fit){
 
@@ -78,22 +78,22 @@ void estimateDifferentialQuantities(const std::string& name, Context& context) {
             dmin.row( i ) = fit.kminDirection();
             dmax.row( i ) = fit.kmaxDirection();
             normal.row(i) = fit.primitiveGradient();
-            proj.row(i)   = fit.getNeighborFilter().evalPos() - context.tree.points()[i].pos();
+            proj.row(i)   = fit.getNeighborFilter().evalPos() - context.asset.tree.points()[i].pos();
         }, context);
     });
 
     measureTime( "[Polyscope] Update differential quantities",
                  [&name, &mean, &kmin, &kmax, &normal, &dmin, &dmax, &proj, &context]() {
-                     context.addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
-                     context.addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
-                     context.addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
-                     context.addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
-                        Scalar(2) * context.pointRadius);
-                     context.addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
-                        Scalar(2) * context.pointRadius);
-                    context.addVectorQuantity(name + " - normal", normal)->setVectorLengthScale(
-                        Scalar(2) * context.pointRadius);
-                    context.addVectorQuantity(name + " - projection", proj, polyscope::VectorType::AMBIENT);
+                     context.asset.addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
+                     context.asset.addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
+                     context.asset.addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
+                     context.asset.addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
+                        Scalar(2) * context.computeOpts.pointRadius);
+                     context.asset.addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
+                        Scalar(2) * context.computeOpts.pointRadius);
+                    context.asset.addVectorQuantity(name + " - normal", normal)->setVectorLengthScale(
+                        Scalar(2) * context.computeOpts.pointRadius);
+                    context.asset.addVectorQuantity(name + " - projection", proj, polyscope::VectorType::AMBIENT);
 
                  });
 }
@@ -102,13 +102,13 @@ void estimateDifferentialQuantities(const std::string& name, Context& context) {
 /// \tparam FitT Defines the type of estimator used for computation
 template<typename FitT>
 void estimateDifferentialQuantitiesCNC(const std::string& name, Context& context) {
-    int nvert = int(context.tree.samples().size());
+    int nvert = int(context.asset.tree.samples().size());
     Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
     Eigen::MatrixXd dmin( nvert, 3 ), dmax( nvert, 3 );
 
     measureTime( "[Ponca] Compute differential quantities using " + name,
                  [&mean, &kmin, &kmax, &dmin, &dmax, &context]() {
-        processPointCloudCNC<FitT>(context.NSize,
+        processPointCloudCNC<FitT>(context.computeOpts.NSize,
                                 [&mean, &kmin, &kmax, &dmin, &dmax]
                                 (const int i, const FitT& fit){
 
@@ -122,13 +122,13 @@ void estimateDifferentialQuantitiesCNC(const std::string& name, Context& context
 
     measureTime( "[Polyscope] Update differential quantities",
                  [&name, &mean, &kmin, &kmax, &dmin, &dmax, &context]() {
-                     context.addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
-                     context.addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
-                     context.addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
-                     context.addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
-                        Scalar(2) * context.pointRadius);
-                     context.addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
-                        Scalar(2) * context.pointRadius);
+                     context.asset.addScalarQuantity(name + " - Mean Curvature", mean)->setMapRange({-10,10});
+                     context.asset.addScalarQuantity(name + " - K1", kmin)->setMapRange({-10,10});
+                     context.asset.addScalarQuantity(name + " - K2", kmax)->setMapRange({-10,10});
+                     context.asset.addVectorQuantity(name + " - K1 direction", dmin)->setVectorLengthScale(
+                        Scalar(2) * context.computeOpts.pointRadius);
+                     context.asset.addVectorQuantity(name + " - K2 direction", dmax)->setVectorLengthScale(
+                        Scalar(2) * context.computeOpts.pointRadius);
                  });
 }
 
@@ -136,7 +136,7 @@ void estimateDifferentialQuantitiesCNC(const std::string& name, Context& context
 /// This function is useful to monitor the KdTree performances
 inline void mlsDryRun(Context& context) {
     measureTime( "[Ponca] Dry run MLS ", [&context]() {
-        processPointCloudMLS<Context::FitDry>( context.NSize, [](int, const Context::FitDry&){ }, context);
+        processPointCloudMLS<Context::Types::FitDry>( context.computeOpts.NSize, [](int, const Context::Types::FitDry&){ }, context);
     });
 }
 
@@ -148,28 +148,28 @@ void callback_estimators(Context& context)
     ImGui::Separator();
 
     ImGui::Text("MLS");
-    ImGui::InputInt("Nb Iterations", &context.mlsIter);
+    ImGui::InputInt("Nb Iterations", &context.computeOpts.mlsIter);
     ImGui::SameLine();
-    ImGui::InputFloat("Epsilon", &context.mlsEpsilon);
+    ImGui::InputFloat("Epsilon", &context.computeOpts.mlsEpsilon);
     if (ImGui::Button("Plane (PCA)")) // Compute curvature using Covariance Plane fitting
-        estimateDifferentialQuantities<Context::FitPlaneDiff>("PSS",context);
+        estimateDifferentialQuantities<Context::Types::FitPlaneDiff>("PSS",context);
     ImGui::SameLine();
     if (ImGui::Button("APSS")) // Compute curvature using APSS
-        estimateDifferentialQuantities<Context::FitAPSSDiff>("APSS",context);
+        estimateDifferentialQuantities<Context::Types::FitAPSSDiff>("APSS",context);
     ImGui::SameLine();
     if (ImGui::Button("ASO")) // Compute curvature using Algebraic Shape Operator
-        estimateDifferentialQuantities<Context::FitASODiff>("ASO",context);
+        estimateDifferentialQuantities<Context::Types::FitASODiff>("ASO",context);
 
     ImGui::Text("Corrected Normal Current estimator");
     if (ImGui::Button("Uniform"))
-        estimateDifferentialQuantitiesCNC<Context::FitCNCUniform>("CNC - Uniform",context);
+        estimateDifferentialQuantitiesCNC<Context::Types::FitCNCUniform>("CNC - Uniform",context);
     ImGui::SameLine();
     if (ImGui::Button("Independent"))
-        estimateDifferentialQuantitiesCNC<Context::FitCNCIndep>("CNC - Independent",context);
+        estimateDifferentialQuantitiesCNC<Context::Types::FitCNCIndep>("CNC - Independent",context);
     ImGui::SameLine();
     if (ImGui::Button("Hexagram"))
-        estimateDifferentialQuantitiesCNC<Context::FitCNCHex>("CNC - Hexagram",context);
+        estimateDifferentialQuantitiesCNC<Context::Types::FitCNCHex>("CNC - Hexagram",context);
     ImGui::SameLine();
     if (ImGui::Button("AvgHexagram"))
-        estimateDifferentialQuantitiesCNC<Context::FitCNCAvgHex>("CNC - AvgHexagram",context);
+        estimateDifferentialQuantitiesCNC<Context::Types::FitCNCAvgHex>("CNC - AvgHexagram",context);
 }

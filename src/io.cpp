@@ -12,8 +12,8 @@
 #include <string>
 
 using namespace Ponca;
-using Scalar     = Context::Scalar;
-using VectorType = Context::VectorType;
+using Scalar     = Context::Types::Scalar;
+using VectorType = Context::Types::VectorType;
 
 bool loadObjUsingLibIGL(const std::string& path, Context& context, Eigen::MatrixXd &coords, Eigen::MatrixXd &normals)
 {
@@ -84,20 +84,20 @@ bool loadFile(const std::string& path, Context& context)
         }
     }
 
-    context.cloudV = newCloud;
+    context.asset.cloudV = newCloud;
     // no need to delete the previous cloud, polyscope handles it
-    context.scalarQuantites.clear();
-    context.vectorQuantites.clear();
-    context.cloud = polyscope::registerPointCloud("cloud", context.cloudV);
-    context.cloudN = newNormals;
+    context.asset.scalarQuantites.clear();
+    context.asset.vectorQuantites.clear();
+    context.asset.cloud = polyscope::registerPointCloud("cloud", context.asset.cloudV);
+    context.asset.cloudN = newNormals;
 
     // Bounding Box (used in the slicer)
-    context.lower = context.cloudV.colwise().minCoeff();
-    context.upper = context.cloudV.colwise().maxCoeff();
+    context.asset.lower = context.asset.cloudV.colwise().minCoeff();
+    context.asset.upper = context.asset.cloudV.colwise().maxCoeff();
 
     // Build Ponca KdTree
     measureTime( "[Ponca] Build KdTree", [&context]() {
-        buildKdTree(context.cloudV, context.cloudN, context.tree);
+        buildKdTree(context.asset.cloudV, context.asset.cloudN, context.asset.tree);
     });
 
 
@@ -107,29 +107,29 @@ bool loadFile(const std::string& path, Context& context)
         constexpr Scalar pointSizeFactor = 0.25;
         constexpr Scalar scaleFactor = 5;
 #pragma omp parallel for
-        for (int i = 0; i < context.tree.samples().size(); ++i)
+        for (int i = 0; i < context.asset.tree.samples().size(); ++i)
         {
             Scalar pointMDist = 0;
-            VectorType p = context.tree.points()[i].pos();
+            VectorType p = context.asset.tree.points()[i].pos();
             context.doOnKNeighbors(i, [&pointMDist,p,&context](auto&& neighborhood){
                 for (int j : neighborhood){
-                    pointMDist += (p-context.tree.points()[j].pos()).norm();
+                    pointMDist += (p-context.asset.tree.points()[j].pos()).norm();
                 }
             });
 #pragma omp critical
-            cloudMDist += pointMDist/Scalar(context.kNN);
+            cloudMDist += pointMDist/Scalar(context.computeOpts.kNN);
         }
-        context.pointRadius = pointSizeFactor * cloudMDist/Scalar(context.tree.samples().size());
-        context.NSize = scaleFactor * cloudMDist/Scalar(context.tree.samples().size());
+        context.computeOpts.pointRadius = pointSizeFactor * cloudMDist/Scalar(context.asset.tree.samples().size());
+        context.computeOpts.NSize = scaleFactor * cloudMDist/Scalar(context.asset.tree.samples().size());
     });
 
     // Be sure that the KnnGraph is invalidated
-    delete context.knnGraph;
-    context.useKnnGraph = false;
-    context.knnGraph = nullptr;
+    delete context.asset.knnGraph;
+    context.computeOpts.useKnnGraph = false;
+    context.asset.knnGraph = nullptr;
 
     // Register the point cloud with Polyscope
-    context.cloud->setPointRadius(context.pointRadius);
+    context.asset.cloud->setPointRadius(context.computeOpts.pointRadius);
     polyscope::requestRedraw();
 
     std::cout << "[Poncascope] Loading file succeeded"<< std::endl;
@@ -142,13 +142,13 @@ bool saveFile(const std::string& path, Context& context)
     happly::PLYData plyOut;
     plyOut.comments.push_back("File generated with Poncascope (https://github.com/poncateam/poncascope)");
 
-    int nbVert = context.cloud->points.size();
+    int nbVert = context.asset.cloud->points.size();
 
     // compute number of properties to export
     int nbPropS = 0;
     int nbPropV = 0;
-    for (const auto& handler: context.scalarQuantites) if (handler.save) ++nbPropS;
-    for (const auto& handler: context.vectorQuantites) if (handler.save) ++nbPropV;
+    for (const auto& handler: context.asset.scalarQuantites) if (handler.save) ++nbPropS;
+    for (const auto& handler: context.asset.vectorQuantites) if (handler.save) ++nbPropV;
 
     auto addVectorData = [&plyOut](int n, const std::vector<glm::vec3>& h, const std::string& name)
     {
@@ -170,19 +170,19 @@ bool saveFile(const std::string& path, Context& context)
     };
 
 
-    addVectorData(nbVert, context.cloud->points.data, "vertex");
+    addVectorData(nbVert, context.asset.cloud->points.data, "vertex");
     for (int i = 0; i != nbPropS; ++i)
     {
-        std::string name = context.scalarQuantites[i].name;
+        std::string name = context.asset.scalarQuantites[i].name;
         name.erase(std::remove_if(name.begin(), name.end(), isspace), name.end());
         plyOut.getElement("vertex").addProperty<float>(name,
-            context.scalarQuantites[i].ptr->quantity.values.data);
+            context.asset.scalarQuantites[i].ptr->quantity.values.data);
     }
     for (int i = 0; i != nbPropV; ++i)
     {
-        std::string name = context.vectorQuantites[i].name;
+        std::string name = context.asset.vectorQuantites[i].name;
         name.erase(std::remove_if(name.begin(), name.end(), isspace), name.end());
-        addVectorData(nbVert, context.vectorQuantites[i].ptr->vectors.data, name);
+        addVectorData(nbVert, context.asset.vectorQuantites[i].ptr->vectors.data, name);
     }
 
     plyOut.write(path, happly::DataFormat::Binary);
@@ -195,7 +195,7 @@ void callback_io(Context& context)
     // open Dialog Simple
     if (ImGui::Button("Open File Dialog")) {
         IGFD::FileDialogConfig config;
-        config.path = context.loadPath;
+        config.path = context.ioOptions.loadPath;
         config.flags = ImGuiFileDialogFlags_DisableCreateDirectoryButton
             | ImGuiFileDialogFlags_ReadOnlyFileNameField;
         ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".obj", config);
@@ -206,27 +206,27 @@ void callback_io(Context& context)
             std::string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
             // std::string filePath = ImGuiFileDialog::Instance()->GetCurrentPath();
 
-            if (loadFile(filePathName, context)) context.loadPath = filePathName;
+            if (loadFile(filePathName, context)) context.ioOptions.loadPath = filePathName;
         }
 
         // close
         ImGuiFileDialog::Instance()->Close();
     }
 
-    if (context.cloud != nullptr)
+    if (context.asset.cloud != nullptr)
     {
         ImGui::SameLine();
         if (ImGui::Button("Save File")) {
             IGFD::FileDialogConfig config;
 
             // if never saved before, compute a path according to loaded path
-            if (context.savePath.empty())
+            if (context.ioOptions.savePath.empty())
             {
-                std::filesystem::path filePath(context.loadPath);
+                std::filesystem::path filePath(context.ioOptions.loadPath);
                 filePath.replace_extension(".ply");
-                context.savePath = filePath.string();
+                context.ioOptions.savePath = filePath.string();
             }
-            config.path = context.savePath;
+            config.path = context.ioOptions.savePath;
             config.flags = ImGuiFileDialogFlags_ConfirmOverwrite;
             ImGuiFileDialog::Instance()->OpenDialog("SaveFileDlgKey", "Save File as...", ".ply", config);
         }
@@ -235,7 +235,7 @@ void callback_io(Context& context)
             if (ImGuiFileDialog::Instance()->IsOk()) { // action if OK
                 std::string filePathName = ImGuiFileDialog::Instance()->GetFilePathName();
                 // std::string filePath = ImGuiFileDialog::Instance()->GetCurrentPath();
-                context.savePath = filePathName;
+                context.ioOptions.savePath = filePathName;
                 ImGuiFileDialog::Instance()->Close();
                 ImGui::OpenPopup("Choose export options");
             } else
@@ -245,13 +245,13 @@ void callback_io(Context& context)
 
     if (ImGui::BeginPopupModal("Choose export options", nullptr, ImGuiWindowFlags_AlwaysAutoResize)) {
         ImGui::SeparatorText("Scalar quantities");
-        for (auto& handler: context.scalarQuantites) ImGui::Checkbox(handler.name.c_str(), &(handler.save));
+        for (auto& handler: context.asset.scalarQuantites) ImGui::Checkbox(handler.name.c_str(), &(handler.save));
 
         ImGui::SeparatorText("Vector quantities");
-        for (auto& handler: context.vectorQuantites) ImGui::Checkbox(handler.name.c_str(), &(handler.save));
+        for (auto& handler: context.asset.vectorQuantites) ImGui::Checkbox(handler.name.c_str(), &(handler.save));
 
         if (ImGui::Button("Save")) {
-            saveFile(context.savePath, context);
+            saveFile(context.ioOptions.savePath, context);
             ImGui::CloseCurrentPopup();
         }
         if (ImGui::Button("Cancel")) {
