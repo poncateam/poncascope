@@ -61,6 +61,12 @@ struct Context
         Types::VectorType lower, upper;
 
 
+        ~Asset()
+        {
+            delete knnGraph;
+        }
+
+
         // An abstraction of the polyscope quantities that is used to track fields and simplify saving
         template <typename QtyType>
         struct QuantityHandler

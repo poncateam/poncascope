@@ -63,7 +63,5 @@ int main(int argc, char** argv) {
 
     // Show the gui
     polyscope::show();
-
-    delete context.asset.knnGraph;
     return EXIT_SUCCESS;
 }
