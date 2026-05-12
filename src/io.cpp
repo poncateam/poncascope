@@ -139,6 +139,53 @@ bool loadFile(const std::string& path, Context& context)
 
 bool saveFile(const std::string& path, Context& context)
 {
+    happly::PLYData plyOut;
+    plyOut.comments.push_back("File generated with Poncascope (https://github.com/poncateam/poncascope)");
+
+    int nbVert = context.cloud->points.size();
+
+    // compute number of properties to export
+    int nbPropS = 0;
+    int nbPropV = 0;
+    for (const auto& handler: context.scalarQuantites) if (handler.save) ++nbPropS;
+    for (const auto& handler: context.vectorQuantites) if (handler.save) ++nbPropV;
+
+    auto addVectorData = [&plyOut](int n, const std::vector<glm::vec3>& h, const std::string& name)
+    {
+        std::vector<double> xPos(n);
+        std::vector<double> yPos(n);
+        std::vector<double> zPos(n);
+        for (size_t i = 0; i < n; i++) {
+            const auto& v = h[i];
+            xPos[i] = v[0];
+            yPos[i] = v[1];
+            zPos[i] = v[2];
+        }
+
+        // Store
+        plyOut.addElement(name, n);
+        plyOut.getElement(name).addProperty<double>("x", xPos);
+        plyOut.getElement(name).addProperty<double>("y", yPos);
+        plyOut.getElement(name).addProperty<double>("z", zPos);
+    };
+
+
+    addVectorData(nbVert, context.cloud->points.data, "vertex");
+    for (int i = 0; i != nbPropS; ++i)
+    {
+        std::string name = context.scalarQuantites[i].name;
+        name.erase(std::remove_if(name.begin(), name.end(), isspace), name.end());
+        plyOut.getElement("vertex").addProperty<float>(name,
+            context.scalarQuantites[i].ptr->quantity.values.data);
+    }
+    for (int i = 0; i != nbPropV; ++i)
+    {
+        std::string name = context.vectorQuantites[i].name;
+        name.erase(std::remove_if(name.begin(), name.end(), isspace), name.end());
+        addVectorData(nbVert, context.vectorQuantites[i].ptr->vectors.data, name);
+    }
+
+    plyOut.write(path, happly::DataFormat::Binary);
 
     return true;
 }
