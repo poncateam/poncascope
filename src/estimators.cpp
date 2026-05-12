@@ -78,7 +78,7 @@ void estimateDifferentialQuantities(const std::string& name, Context& context) {
             dmin.row( i ) = fit.kminDirection();
             dmax.row( i ) = fit.kmaxDirection();
             normal.row(i) = fit.primitiveGradient();
-            proj.row(i)   = fit.getNeighborFilter().evalPos() - context.asset.tree.points()[i].pos();
+            proj.row(i)   = fit.getNeighborFilter().frame().center() - context.asset.tree.points()[i].pos();
         }, context);
     });
 
