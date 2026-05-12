@@ -5,6 +5,7 @@
 
 
 bool loadFile(const std::string& path, Context& context);
+bool saveFile(const std::string& path, Context& context);
 
 // Populate polyscope callback
 void callback_io(Context& context);

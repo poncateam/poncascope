@@ -20,7 +20,7 @@ void colorizeEuclideanNeighborhood(Context& context) {
         }
     });
 
-    context.cloud->addScalarQuantity(  "range neighborhood", closest);
+    context.addScalarQuantity(  "range neighborhood", closest);
 }
 
 /// Show in polyscope the knn neighborhood of the selected point (iVertexSource)
@@ -36,7 +36,7 @@ void colorizeKnn(Context& context) {
         }
     });
 
-    context.cloud->addScalarQuantity(  "knn neighborhood", closest);
+    context.addScalarQuantity(  "knn neighborhood", closest);
 }
 
 /// Recompute K-Neighbor graph
@@ -49,7 +49,7 @@ void recomputeKnnGraph(Context& context) {
 
 void callback_datastructures(Context& context)
 {
-    ImGui::Text("Acceleration Structure");
+    ImGui::SeparatorText("Acceleration Structure");
     bool knnGraphUIChanged = ImGui::Checkbox("Use KnnGraph", &context.useKnnGraph);
     if (context.useKnnGraph)
     {
@@ -58,8 +58,7 @@ void callback_datastructures(Context& context)
             recomputeKnnGraph(context);
     }
 
-    ImGui::Separator();
-    ImGui::Text("Neighborhood queries");
+    ImGui::SeparatorText("Neighborhood queries");
     ImGui::Checkbox("Use Range Queries", &context.useRangeNei);
     ImGui::SameLine();
     if (context.useRangeNei)
@@ -67,7 +66,7 @@ void callback_datastructures(Context& context)
     else
         ImGui::InputInt("k-neighborhood size", &context.kNN);
 
-    ImGui::Separator();
+    ImGui::SeparatorText("Neighborhood display");
     ImGui::InputInt("source vertex", &context.iVertexSource);
     ImGui::SameLine();
     if (context.useRangeNei) {

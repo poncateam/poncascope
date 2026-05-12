@@ -105,7 +105,7 @@ polyscope::SurfaceMesh* registerRegularSlicer(const std::string &name,
 
 void callback_slicer(Context& context)
 {
-    ImGui::Text("Implicit function slicer");
+    ImGui::SeparatorText("Implicit function slicer");
     ImGui::SliderFloat("Slice", &context.slice, 0, 1.0); ImGui::SameLine();
     ImGui::Checkbox("HD", &context.isHDSlicer);
     ImGui::RadioButton("X axis", &context.axis, 0); ImGui::SameLine();
