@@ -40,6 +40,38 @@ bool loadObjUsingLibIGL(const std::string& path, Context& context, Eigen::Matrix
     return true;
 }
 
+bool loadPlyUsingHapply(const std::string& path, Context& context, Eigen::MatrixXd &coords, Eigen::MatrixXd &normals)
+{
+    happly::PLYData plyIn (path);
+
+
+    std::vector<double> xPos = plyIn.getElement("vertex").getProperty<double>("x");
+    std::vector<double> yPos = plyIn.getElement("vertex").getProperty<double>("y");
+    std::vector<double> zPos = plyIn.getElement("vertex").getProperty<double>("z");
+
+    coords.resize(int(xPos.size()),3);
+
+    std::vector<double> nxPos, nyPos, nzPos;
+    bool hasNormals = plyIn.getElement("vertex").hasProperty("nx");
+    if (hasNormals)
+    {
+        nxPos = plyIn.getElement("vertex").getProperty<double>("nx");
+        nyPos = plyIn.getElement("vertex").getProperty<double>("ny");
+        nzPos = plyIn.getElement("vertex").getProperty<double>("nz");
+    }
+    bool hasValidNormals = xPos.size() == nxPos.size();
+    if (hasValidNormals)
+        normals.resize(int(nxPos.size()),3);
+
+    for (int i = 0; i < int(xPos.size()); i++) {
+        coords.row(i) << xPos[i], yPos[i], zPos[i];
+        if (hasValidNormals)
+            normals.row(i) << nxPos[i], nyPos[i], nzPos[i];
+    }
+
+    return true;
+}
+
 // Simple constexpr hash function
 // Source: https://www.reddit.com/r/cpp/comments/jkw84k/strings_in_switch_statements_using_constexp/
 constexpr size_t hash(const char* str){
@@ -67,6 +99,9 @@ bool loadFile(const std::string& path, Context& context)
     {
     case hash(".obj"):
         loaded = loadObjUsingLibIGL(path, context, newCloud, newNormals);
+        break;
+    case hash(".ply"):
+        loaded = loadPlyUsingHapply(path, context, newCloud, newNormals);
         break;
     default:
         loaded = false;
@@ -198,7 +233,7 @@ void callback_io(Context& context)
         config.path = context.ioOptions.loadPath;
         config.flags = ImGuiFileDialogFlags_DisableCreateDirectoryButton
             | ImGuiFileDialogFlags_ReadOnlyFileNameField;
-        ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".obj", config);
+        ImGuiFileDialog::Instance()->OpenDialog("ChooseFileDlgKey", "Choose File", ".obj,.ply", config);
     }
     // display
     if (ImGuiFileDialog::Instance()->Display("ChooseFileDlgKey")) {
