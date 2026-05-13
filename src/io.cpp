@@ -165,6 +165,9 @@ bool loadFile(const std::string& path, Context& context)
 
     // Register the point cloud with Polyscope
     context.asset.cloud->setPointRadius(context.computeOpts.pointRadius);
+    context.asset.cloud->setPointRenderMode(context.asset.cloud->nPoints() > 400000
+        ? polyscope::PointRenderMode::Quad
+        : polyscope::PointRenderMode::Sphere );
     polyscope::requestRedraw();
 
     std::cout << "[Poncascope] Loading file succeeded"<< std::endl;
