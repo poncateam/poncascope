@@ -1,4 +1,6 @@
 #include "datastructures.hpp"
+
+#include "context.hpp"
 #include "imgui.h"
 
 #include "polyscope/point_cloud.h"
@@ -40,22 +42,26 @@ void colorizeKnn(Context& context) {
 }
 
 /// Recompute K-Neighbor graph
-void recomputeKnnGraph(Context& context) {
+void recomputeTopology(Context& context) {
     measureTime("[Ponca] Build KnnGraph", [&context]() {
         delete context.asset.knnGraph;
-        context.asset.knnGraph = new Context::Types::KnnGraph(context.asset.tree, context.computeOpts.kNNGraphK);
+        context.asset.knnGraph = new Context::Types::KnnGraph(context.asset.tree, context.dataStructureOptions.kNNGraphK);
     });
 }
 
 void callback_datastructures(Context& context)
 {
-    ImGui::SeparatorText("Acceleration Structure");
-    bool knnGraphUIChanged = ImGui::Checkbox("Use KnnGraph", &context.computeOpts.useKnnGraph);
-    if (context.computeOpts.useKnnGraph)
+    ImGui::SeparatorText("Topology");
+    int currentTopologyMode = context.dataStructureOptions.topoMode;
+    const char* topologyMode[] = { "None", "KnnGraph" };
+    if (ImGui::Combo("Restrict queries to topology", &currentTopologyMode, topologyMode, Context::DataStructureOptions::TopologyModeCount))
     {
-        ImGui::SameLine();
-        if (ImGui::InputInt("Graph k", &context.computeOpts.kNNGraphK) || knnGraphUIChanged) // recompute when activated or changed
-            recomputeKnnGraph(context);
+        if (currentTopologyMode != context.dataStructureOptions.topoMode)
+        {
+            context.dataStructureOptions.topoMode = Context::DataStructureOptions::TopologyMode(currentTopologyMode);
+            if (currentTopologyMode != Context::DataStructureOptions::TopologyMode::None) // recompute when activated
+                recomputeTopology(context);
+        }
     }
 
     ImGui::SeparatorText("Neighborhood queries");

@@ -109,14 +109,23 @@ struct Context
         // Options for algorithms
         int iVertexSource    = 7;     /// < id of the selected point
         int kNN              = 10;    /// < neighborhood size (knn)
-        int kNNGraphK        = 6;     /// < number of neighbors used to compute the knngraph
         float NSize          = 0.1f;  /// < neighborhood size (euclidean)
         int mlsIter          = 1;     /// < number of moving least squares iterations
         float mlsEpsilon     = 0.001f; /// < motion distance stopping criterion for moving least squares
         Types::Scalar pointRadius = 0.005; /// < display radius of the point cloud
-        bool useKnnGraph     = false; /// < use k-neighbor graph instead of kdtree
         bool useRangeNei     = true;  /// < use range neighbors for estimators (or knn queries otherwise)
     } computeOpts;
+
+    struct DataStructureOptions
+    {
+        enum TopologyMode
+        {
+            None              = 0, // Kdtree
+            KnnGraph          = 1, // KnnGraph
+            TopologyModeCount = 2  // not a true mode per se, but the number of modes
+        } topoMode {None};
+        int kNNGraphK        = 6;     /// < number of neighbors used to compute the knngraph
+    } dataStructureOptions;
 
     struct SlicerOptions
     {
@@ -134,10 +143,18 @@ struct Context
     //! \brief Dispatch a lambda on a range neighbors query over either the KnnGraph or the KdTree
     template <typename Functor>
     void doOnRangeNeighbors(const int i, const Functor& f) {
-        if (computeOpts.useKnnGraph)
-            f(asset.knnGraph->rangeNeighbors(i, computeOpts.NSize));
-        else
+        switch (dataStructureOptions.topoMode)
+        {
+        case DataStructureOptions::TopologyMode::None:
             f(asset.tree.rangeNeighbors(i, computeOpts.NSize));
+            break;
+        case DataStructureOptions::TopologyMode::KnnGraph:
+            f(asset.knnGraph->rangeNeighbors(i, computeOpts.NSize));
+            break;
+        case DataStructureOptions::TopologyModeCount:
+        default:
+            break;
+        }
     }
 
     //! \brief Dispatch a lambda on a range neighbors query over either the KnnGraph or the KdTree
