@@ -6,5 +6,6 @@
 // Populate polyscope callback
 void callback_datastructures(Context& context);
 
-void generateTopologyDisplay(Context& context, const std::string &name);
+void generateLocalTopologyDisplay(Context& context, const std::string &name);
+void generateFullTopologyDisplay(Context& context);
 

@@ -129,6 +129,7 @@ struct Context
         } topoMode {None};
         int kNNGraphK        = 6;         /// < number of neighbors used to compute the knngraph
         float neighborGraphRange =  0.1f; /// < range used to build the neighbor graph
+        bool displayTopology = false;
     } dataStructureOptions;
 
     struct SlicerOptions
@@ -158,6 +159,24 @@ struct Context
         case DataStructureOptions::TopologyMode::NeighborGraph:
             f(asset.neiGraph->rangeNeighbors(i, computeOpts.NSize));
             break;
+        case DataStructureOptions::TopologyModeCount:
+        default:
+            break;
+        }
+    }
+
+    //! \brief Dispatch a lambda on the active graph if it exists (otherwise does nothing)
+    template <typename Functor>
+    void doOnGraph(const Functor& f) {
+        switch (dataStructureOptions.topoMode)
+        {
+        case DataStructureOptions::TopologyMode::KnnGraph:
+            f(asset.knnGraph);
+            break;
+        case DataStructureOptions::TopologyMode::NeighborGraph:
+            f(asset.neiGraph);
+            break;
+        case DataStructureOptions::TopologyMode::None:
         case DataStructureOptions::TopologyModeCount:
         default:
             break;
