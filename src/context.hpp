@@ -160,6 +160,11 @@ struct Context
     //! \brief Dispatch a lambda on a range neighbors query over either the KnnGraph or the KdTree
     template <typename Functor>
     void doOnKNeighbors(const int i, const Functor& f) {
+        if (computeOpts.kNN > Types::KdTree::Traits::MAX_KNN_SIZE)
+        {
+            std::cout<< "[warning] Knn query is too large, reducing" << std::endl;
+            computeOpts.kNN = Types::KdTree::Traits::MAX_KNN_SIZE;
+        }
         f(asset.tree.kNearestNeighbors(i, computeOpts.kNN));
     }
 
