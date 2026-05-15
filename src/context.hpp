@@ -17,6 +17,7 @@ struct Context
         using VectorType         = Eigen::Vector<Scalar, 3>;
         using PPAdapter          = BlockPointAdapter<Scalar>;
         using KdTree             = Ponca::KdTreeSparse<PPAdapter>;
+        using NeighborGraph      = Ponca::NeighborGraph<PPAdapter>;
         using KnnGraph           = Ponca::KnnGraph<PPAdapter>;
         using SmoothWeightFunc   = Ponca::DistWeightFunc<PPAdapter, Ponca::SmoothWeightKernel<Scalar> >;
 
@@ -57,6 +58,7 @@ struct Context
         Eigen::MatrixXd cloudV, cloudN;
         Types::KdTree tree;
         Types::KnnGraph* knnGraph {nullptr};
+        Types::NeighborGraph* neiGraph {};
         polyscope::PointCloud* cloud = nullptr;
         Types::VectorType lower, upper;
 
@@ -122,9 +124,11 @@ struct Context
         {
             None              = 0, // Kdtree
             KnnGraph          = 1, // KnnGraph
-            TopologyModeCount = 2  // not a true mode per se, but the number of modes
+            NeighborGraph     = 2,
+            TopologyModeCount = 3  // not a true mode per se, but the number of modes
         } topoMode {None};
-        int kNNGraphK        = 6;     /// < number of neighbors used to compute the knngraph
+        int kNNGraphK        = 6;         /// < number of neighbors used to compute the knngraph
+        float neighborGraphRange =  0.1f; /// < range used to build the neighbor graph
     } dataStructureOptions;
 
     struct SlicerOptions
@@ -150,6 +154,9 @@ struct Context
             break;
         case DataStructureOptions::TopologyMode::KnnGraph:
             f(asset.knnGraph->rangeNeighbors(i, computeOpts.NSize));
+            break;
+        case DataStructureOptions::TopologyMode::NeighborGraph:
+            f(asset.neiGraph->rangeNeighbors(i, computeOpts.NSize));
             break;
         case DataStructureOptions::TopologyModeCount:
         default:

@@ -71,9 +71,27 @@ void colorizeKnn(Context& context) {
 
 /// Recompute K-Neighbor graph
 void recomputeTopology(Context& context) {
-    measureTime("[Ponca] Build KnnGraph", [&context]() {
+    measureTime("[Ponca] Build Graph", [&context]() {
+        // delete existing datastructures
         delete context.asset.knnGraph;
-        context.asset.knnGraph = new Context::Types::KnnGraph(context.asset.tree, context.dataStructureOptions.kNNGraphK);
+        delete context.asset.neiGraph;
+
+        context.asset.knnGraph = nullptr;
+        context.asset.neiGraph = nullptr;
+
+        switch (context.dataStructureOptions.topoMode)
+        {
+        case Context::DataStructureOptions::KnnGraph:
+            context.asset.knnGraph = new Context::Types::KnnGraph(context.asset.tree, context.dataStructureOptions.kNNGraphK);
+            break;
+        case Context::DataStructureOptions::NeighborGraph:
+            context.asset.neiGraph = new Context::Types::NeighborGraph(context.asset.tree, context.dataStructureOptions.neighborGraphRange);
+            break;
+        case Context::DataStructureOptions::None:
+        case Context::DataStructureOptions::TopologyModeCount:
+        default:
+            ;
+        }
     });
 }
 
@@ -81,16 +99,25 @@ void callback_datastructures(Context& context)
 {
     ImGui::SeparatorText("Topology");
     int currentTopologyMode = context.dataStructureOptions.topoMode;
-    const char* topologyMode[] = { "None", "KnnGraph" };
+    const char* topologyMode[] = { "None", "Knn Graph", "Neighbor Graph" };
     if (ImGui::Combo("Restrict queries to topology", &currentTopologyMode, topologyMode, Context::DataStructureOptions::TopologyModeCount))
     {
         if (currentTopologyMode != context.dataStructureOptions.topoMode)
         {
+
             context.dataStructureOptions.topoMode = Context::DataStructureOptions::TopologyMode(currentTopologyMode);
             if (currentTopologyMode != Context::DataStructureOptions::TopologyMode::None) // recompute when activated
                 recomputeTopology(context);
         }
     }
+
+    bool changed = false;
+    if (currentTopologyMode == Context::DataStructureOptions::TopologyMode::KnnGraph)
+        changed = ImGui::InputInt("k-neighborhood size", &context.dataStructureOptions.kNNGraphK);
+    else if (currentTopologyMode == Context::DataStructureOptions::TopologyMode::NeighborGraph)
+        changed = ImGui::InputFloat("k-neighborhood size", &context.dataStructureOptions.neighborGraphRange);
+
+    if (changed) recomputeTopology(context);
 
     ImGui::SeparatorText("Neighborhood queries");
     ImGui::Checkbox("Use Range Queries", &context.computeOpts.useRangeNei);

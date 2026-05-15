@@ -160,8 +160,10 @@ bool loadFile(const std::string& path, Context& context)
 
     // Be sure that the KnnGraph is invalidated
     delete context.asset.knnGraph;
+    delete context.asset.neiGraph;
     context.dataStructureOptions.topoMode = Context::DataStructureOptions::None;
     context.asset.knnGraph = nullptr;
+    context.asset.neiGraph = nullptr;
 
     // Register the point cloud with Polyscope
     context.asset.cloud->setPointRadius(context.computeOpts.pointRadius);
