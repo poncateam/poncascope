@@ -2,9 +2,33 @@
 
 #include "context.hpp"
 #include "imgui.h"
+#include "polyscope/curve_network.h"
 
 #include "polyscope/point_cloud.h"
 
+
+/// Generate a curve network for the selected point
+void generateTopologyDisplay(Context& context, const std::string &name)
+{
+    std::vector<Context::Types::VectorType> vertices;
+    std::vector<std::array<size_t, 2>> edges;
+    std::vector<double> distances;
+
+    const Context::Types::VectorType q = context.asset.tree.points()[context.computeOpts.iVertexSource].pos();
+
+    vertices.push_back(q);
+    distances.push_back(0);
+
+    context.doOnNeighbors(context.computeOpts.iVertexSource, [&vertices,&context,&edges,&distances,&q](auto&& neighborhood){
+        for (int j : neighborhood){
+            edges.push_back({0,vertices.size()});
+            vertices.emplace_back(context.asset.tree.points()[j].pos());
+            distances.push_back((q-vertices.back()).norm());
+        }
+    });
+    polyscope::CurveNetwork* c = polyscope::registerCurveNetwork(name, vertices, edges);
+    c->addNodeScalarQuantity("Distances",distances);
+}
 
 /// Show in polyscope the euclidean neighborhood of the selected point (iVertexSource), with smooth weighting function
 void colorizeEuclideanNeighborhood(Context& context) {
@@ -22,7 +46,9 @@ void colorizeEuclideanNeighborhood(Context& context) {
         }
     });
 
-    context.asset.addScalarQuantity(  "range neighborhood", closest);
+    context.asset.addScalarQuantity(  "range neighborhood pts " + std::to_string(context.computeOpts.iVertexSource), closest);
+
+    generateTopologyDisplay(context, "range links pts " + std::to_string(context.computeOpts.iVertexSource));
 }
 
 /// Show in polyscope the knn neighborhood of the selected point (iVertexSource)
@@ -38,7 +64,9 @@ void colorizeKnn(Context& context) {
         }
     });
 
-    context.asset.addScalarQuantity(  "knn neighborhood", closest);
+    context.asset.addScalarQuantity(  "knn neighborhood pts " + std::to_string(context.computeOpts.iVertexSource), closest);
+
+    generateTopologyDisplay(context, "knn links pts " + std::to_string(context.computeOpts.iVertexSource));
 }
 
 /// Recompute K-Neighbor graph
