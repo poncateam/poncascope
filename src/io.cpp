@@ -118,13 +118,13 @@ bool loadFile(const std::string& path, Context& context)
             return false;
         }
     }
+    // clear previous asset
+    context.asset.clear();
 
     context.asset.cloudV = newCloud;
-    // no need to delete the previous cloud, polyscope handles it
-    context.asset.scalarQuantites.clear();
-    context.asset.vectorQuantites.clear();
-    context.asset.cloud = polyscope::registerPointCloud("cloud", context.asset.cloudV);
     context.asset.cloudN = newNormals;
+    // no need to delete the previous cloud, polyscope handles it
+    context.asset.cloud  = polyscope::registerPointCloud("cloud", context.asset.cloudV);
 
     // Bounding Box (used in the slicer)
     context.asset.lower = context.asset.cloudV.colwise().minCoeff();
@@ -157,13 +157,6 @@ bool loadFile(const std::string& path, Context& context)
         context.computeOpts.pointRadius = pointSizeFactor * cloudMDist/Scalar(context.asset.tree.samples().size());
         context.computeOpts.NSize = scaleFactor * cloudMDist/Scalar(context.asset.tree.samples().size());
     });
-
-    // Be sure that the KnnGraph is invalidated
-    delete context.asset.knnGraph;
-    delete context.asset.neiGraph;
-    context.dataStructureOptions.topoMode = Context::DataStructureOptions::None;
-    context.asset.knnGraph = nullptr;
-    context.asset.neiGraph = nullptr;
 
     // Register the point cloud with Polyscope
     context.asset.cloud->setPointRadius(context.computeOpts.pointRadius);

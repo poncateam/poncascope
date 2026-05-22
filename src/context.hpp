@@ -58,14 +58,25 @@ struct Context
         Eigen::MatrixXd cloudV, cloudN;
         Types::KdTree tree;
         Types::KnnGraph* knnGraph {nullptr};
-        Types::NeighborGraph* neiGraph {};
+        Types::NeighborGraph* neiGraph {nullptr};
         polyscope::PointCloud* cloud = nullptr;
         Types::VectorType lower, upper;
 
+        void clear()
+        {
+            delete knnGraph;  knnGraph = nullptr;
+            delete neiGraph;  neiGraph = nullptr;
+            cloudV = Eigen::MatrixXd();
+            cloudN = Eigen::MatrixXd();
+            lower  = Types::VectorType();
+            upper  = Types::VectorType();
+            scalarQuantites.clear();
+            vectorQuantites.clear();
+        }
 
         ~Asset()
         {
-            delete knnGraph;
+            clear();
         }
 
 
