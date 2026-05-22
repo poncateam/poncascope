@@ -3,6 +3,7 @@
 #include <Ponca/Ponca>
 
 #include "poncaAdapters.hpp"
+#include "meshGraph.h"
 
 #include <chrono>
 
@@ -19,6 +20,7 @@ struct Context
         using KdTree             = Ponca::KdTreeSparse<PPAdapter>;
         using NeighborGraph      = Ponca::NeighborGraph<PPAdapter>;
         using KnnGraph           = Ponca::KnnGraph<PPAdapter>;
+        using MeshGraph          = MeshNeighborGraph<PPAdapter>;
         using SmoothWeightFunc   = Ponca::DistWeightFunc<PPAdapter, Ponca::SmoothWeightKernel<Scalar> >;
 
 
@@ -60,6 +62,8 @@ struct Context
         Types::KdTree tree;
         Types::KnnGraph* knnGraph {nullptr};
         Types::NeighborGraph* neiGraph {nullptr};
+        Types::MeshGraph* meshGraph {nullptr};
+
         polyscope::PointCloud* cloud = nullptr;
         Types::VectorType lower, upper;
 
@@ -67,6 +71,7 @@ struct Context
         {
             delete knnGraph;  knnGraph = nullptr;
             delete neiGraph;  neiGraph = nullptr;
+            delete meshGraph; meshGraph = nullptr;
             cloudV = Eigen::MatrixXd();
             cloudN = Eigen::MatrixXd();
             meshF  = Eigen::MatrixXi();
@@ -137,9 +142,12 @@ struct Context
         {
             None              = 0, // Kdtree
             KnnGraph          = 1, // KnnGraph
-            NeighborGraph     = 2,
-            TopologyModeCount = 3  // not a true mode per se, but the number of modes
+            NeighborGraph     = 2, // Range NeighborGraph
+            MeshGraph         = 3, // Mesh topology
+            TopologyModeCount = 4  // not a true mode per se, but the number of modes
         } topoMode {None};
+        static constexpr const char* TopologyNames[] =
+            { "None", "Knn Graph", "Neighbor Graph", "Mesh Topology"};
         int kNNGraphK        = 6;         /// < number of neighbors used to compute the knngraph
         float neighborGraphRange =  0.1f; /// < range used to build the neighbor graph
         bool displayTopology = false;
@@ -172,6 +180,9 @@ struct Context
         case DataStructureOptions::TopologyMode::NeighborGraph:
             f(asset.neiGraph->rangeNeighbors(i, computeOpts.NSize));
             break;
+        case DataStructureOptions::TopologyMode::MeshGraph:
+            f(asset.meshGraph->rangeNeighbors(i, computeOpts.NSize));
+            break;
         case DataStructureOptions::TopologyModeCount:
         default:
             break;
@@ -188,6 +199,9 @@ struct Context
             break;
         case DataStructureOptions::TopologyMode::NeighborGraph:
             f(asset.neiGraph);
+            break;
+        case DataStructureOptions::TopologyMode::MeshGraph:
+            f(asset.meshGraph);
             break;
         case DataStructureOptions::TopologyMode::None:
         case DataStructureOptions::TopologyModeCount:

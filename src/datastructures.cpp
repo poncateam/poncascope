@@ -34,9 +34,7 @@ void generateLocalTopologyDisplay(Context& context, const std::string &name)
 void generateFullTopologyDisplay(Context& context)
 {
     std::vector<std::array<int, 2>> edges;
-    std::string name = context.dataStructureOptions.topoMode == Context::DataStructureOptions::KnnGraph
-        ? "Knn Graph"
-        : "Range Neighbor Graph";
+    std::string name = context.dataStructureOptions.TopologyNames[context.dataStructureOptions.topoMode];
 
     for (int i = 0; i != context.asset.tree.pointCount(); ++i)
     {
@@ -107,6 +105,9 @@ void recomputeTopology(Context& context) {
         case Context::DataStructureOptions::NeighborGraph:
             context.asset.neiGraph = new Context::Types::NeighborGraph(context.asset.tree, context.dataStructureOptions.neighborGraphRange);
             break;
+        case Context::DataStructureOptions::MeshGraph:
+            context.asset.meshGraph = new Context::Types::MeshGraph(context.asset.tree, context.asset.meshF);
+            break;
         case Context::DataStructureOptions::None:
         case Context::DataStructureOptions::TopologyModeCount:
         default:
@@ -120,8 +121,14 @@ void callback_datastructures(Context& context)
 {
     ImGui::SeparatorText("Topology");
     int currentTopologyMode = context.dataStructureOptions.topoMode;
-    const char* topologyMode[] = { "None", "Knn Graph", "Neighbor Graph" };
-    if (ImGui::Combo("Restrict queries to topology", &currentTopologyMode, topologyMode, Context::DataStructureOptions::TopologyModeCount))
+    int nbModes = Context::DataStructureOptions::TopologyModeCount;
+
+    // Disable Mesh Graph (last mode) if faces have not been loaded
+    if (context.asset.meshF.cols() == 0) nbModes--;
+
+    if (ImGui::Combo("Restrict queries to topology", &currentTopologyMode,
+                Context::DataStructureOptions::TopologyNames,
+                      nbModes))
     {
         if (currentTopologyMode != context.dataStructureOptions.topoMode)
         {
