@@ -250,6 +250,27 @@ bool saveFile(const std::string& path, Context& context)
         addVectorData(nbVert, context.asset.vectorQuantites[i].ptr->vectors.data, name);
     }
 
+    // implementation is inspired from addFaceIndices, adapted to Eigen matrices
+    int nbFaces = context.asset.meshF.rows();
+    if (nbFaces != 0)
+    {
+        plyOut.addElement("face", nbFaces);
+
+        // Cast to 32 bit
+        std::vector<std::vector<int>> intInds;
+        for (int f = 0; f != context.asset.meshF.rows(); f++) {
+            std::vector<int> face;
+            for (int i = 0; i!= context.asset.meshF.row(f).cols(); ++i)
+            {
+                face.push_back(context.asset.meshF.row(f)(i));
+            }
+            intInds.push_back(face);
+        }
+
+        // Store
+        plyOut.getElement("face").addListProperty<int>("vertex_indices", intInds);
+    }
+
     plyOut.write(path, happly::DataFormat::Binary);
 
     return true;
