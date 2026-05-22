@@ -61,6 +61,7 @@ endif()
 # Create an executable
 add_executable( poncascope
                 src/poncaAdapters.hpp
+                src/meshGraph.h
                 src/context.hpp
                 src/estimators.hpp
                 src/estimators.cpp
