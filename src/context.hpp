@@ -56,6 +56,7 @@ struct Context
     struct Asset {
         // Variables
         Eigen::MatrixXd cloudV, cloudN;
+        Eigen::MatrixXi meshF; // might be empty if the object loaded is not a mesh
         Types::KdTree tree;
         Types::KnnGraph* knnGraph {nullptr};
         Types::NeighborGraph* neiGraph {nullptr};
@@ -68,6 +69,7 @@ struct Context
             delete neiGraph;  neiGraph = nullptr;
             cloudV = Eigen::MatrixXd();
             cloudN = Eigen::MatrixXd();
+            meshF  = Eigen::MatrixXi();
             lower  = Types::VectorType();
             upper  = Types::VectorType();
             scalarQuantites.clear();

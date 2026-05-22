@@ -15,10 +15,11 @@ using namespace Ponca;
 using Scalar     = Context::Types::Scalar;
 using VectorType = Context::Types::VectorType;
 
-bool loadObjUsingLibIGL(const std::string& path, Context& context, Eigen::MatrixXd &coords, Eigen::MatrixXd &normals)
+bool loadObjUsingLibIGL(const std::string& path, Context& context,
+                        Eigen::MatrixXd &coords, Eigen::MatrixXd &normals,
+                        Eigen::MatrixXi &meshF)
 {
     bool worked;
-    Eigen::MatrixXi meshF;
     measureTime( "[libIGL] obj file loading", [path, &coords, &meshF, &worked]()
     // For convenience: use libIGL to load a mesh, and store only the vertices location and normal vector
     {
@@ -40,7 +41,9 @@ bool loadObjUsingLibIGL(const std::string& path, Context& context, Eigen::Matrix
     return true;
 }
 
-bool loadPlyUsingHapply(const std::string& path, Context& context, Eigen::MatrixXd &coords, Eigen::MatrixXd &normals)
+bool loadPlyUsingHapply(const std::string& path, Context& context,
+                        Eigen::MatrixXd &coords, Eigen::MatrixXd &normals,
+                        Eigen::MatrixXi &meshF)
 {
     happly::PLYData plyIn (path);
 
@@ -69,6 +72,33 @@ bool loadPlyUsingHapply(const std::string& path, Context& context, Eigen::Matrix
             normals.row(i) << nxPos[i], nyPos[i], nzPos[i];
     }
 
+    if (plyIn.hasElement("face"))
+    {
+        auto faceList = plyIn.getFaceIndices();
+        // we assume to have faces with the same size (otherwise the process stops)
+        size_t nbFaces  = faceList.size();
+        size_t faceSize =  faceList[0].size();
+
+        meshF.resize(nbFaces, faceSize);
+
+        for (int f = 0; f != faceList.size(); ++ f)
+        {
+            if (faceList[f].size() != faceSize)
+            {
+                meshF = Eigen::MatrixXi();
+                break;
+            }
+
+            using MapType = Eigen::Map<const Eigen::Matrix<unsigned long, Eigen::Dynamic, Eigen::Dynamic>>;
+            meshF.row(f) = MapType(faceList[f].data(), 1, faceSize).cast<int>();
+        }
+
+        if (meshF.cols()==3) // we have a triangle mesh
+        {
+            igl::per_vertex_normals(coords, meshF, normals);
+        }
+    }
+
     return true;
 }
 
@@ -90,6 +120,7 @@ bool loadFile(const std::string& path, Context& context)
 {
     std::cout << "[Poncascope] Load file " << path << std::endl;
     Eigen::MatrixXd newCloud, newNormals;
+    Eigen::MatrixXi newFaces;
 
     std::filesystem::path filePath(path);
     bool loaded = false;
@@ -98,10 +129,10 @@ bool loadFile(const std::string& path, Context& context)
     switch (hash(ext.c_str()))
     {
     case hash(".obj"):
-        loaded = loadObjUsingLibIGL(path, context, newCloud, newNormals);
+        loaded = loadObjUsingLibIGL(path, context, newCloud, newNormals, newFaces);
         break;
     case hash(".ply"):
-        loaded = loadPlyUsingHapply(path, context, newCloud, newNormals);
+        loaded = loadPlyUsingHapply(path, context, newCloud, newNormals, newFaces);
         break;
     default:
         loaded = false;
@@ -123,6 +154,7 @@ bool loadFile(const std::string& path, Context& context)
 
     context.asset.cloudV = newCloud;
     context.asset.cloudN = newNormals;
+    context.asset.meshF  = newFaces;
     // no need to delete the previous cloud, polyscope handles it
     context.asset.cloud  = polyscope::registerPointCloud("cloud", context.asset.cloudV);
 
