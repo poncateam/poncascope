@@ -21,7 +21,7 @@ struct Context
         using NeighborGraph      = Ponca::NeighborGraph<PPAdapter>;
         using KnnGraph           = Ponca::KnnGraph<PPAdapter>;
         using MeshGraph          = MeshNeighborGraph<PPAdapter>;
-        using SmoothWeightFunc   = Ponca::DistWeightFunc<PPAdapter, Ponca::SmoothWeightKernel<Scalar> >;
+        using SmoothWeightFunc   = Ponca::DistWeightFilter<PPAdapter, Ponca::SmoothWeightKernel<Scalar> >;
 
 
         using FitDry = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::DryFit>;
@@ -31,14 +31,15 @@ struct Context
                 FitPlane,
                 Ponca::DiffType::FitSpaceDer,
                 Ponca::CovariancePlaneDer,
-                Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator>;
+                Ponca::NormalDerivativeWeingartenEstimator,
+                Ponca::WeingartenCurvatureEstimatorDer>;
 
         using FitAPSS = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>;
         using FitAPSSDiff = Ponca::BasketDiff<
                 FitAPSS,
                 Ponca::DiffType::FitSpaceDer,
                 Ponca::OrientedSphereDer,
-                Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator,
+                Ponca::NormalDerivativeWeingartenEstimator,
                 Ponca::WeingartenCurvatureEstimatorDer>;
 
         using FitASO = FitAPSS;
@@ -46,7 +47,7 @@ struct Context
                 FitASO,
                 Ponca::DiffType::FitSpaceDer,
                 Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
-                Ponca::CurvatureEstimatorDer, Ponca::NormalDerivativeWeingartenEstimator,
+                Ponca::NormalDerivativeWeingartenEstimator,
                 Ponca::WeingartenCurvatureEstimatorDer>;
 
         using FitCNCUniform = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::UniformGeneration>;

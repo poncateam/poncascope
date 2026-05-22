@@ -35,7 +35,7 @@ void processPointCloudMLS(const typename FitT::Scalar t, const Functor& f, Conte
 /// Generic processing function: traverse point cloud, compute fitting, and use functor to process fitting output
 /// \note Functor is called only if fit is stable
 template<typename FitT, typename Functor>
-void processPointCloudCNC(const typename FitT::Scalar t, const Functor& f, Context& context){
+void processPointCloudSinglePass(const typename FitT::Scalar t, const Functor& f, Context& context){
 #pragma omp parallel for
     for (int i = 0; i < context.asset.tree.samples().size(); ++i) {
         FitT fit;
@@ -60,7 +60,7 @@ void processPointCloudCNC(const typename FitT::Scalar t, const Functor& f, Conte
 
 /// Generic processing function: traverse point cloud and compute mean, first and second curvatures + their direction
 /// \tparam FitT Defines the type of estimator used for computation
-template<typename FitT>
+template<ProvidesPrincipalCurvatures FitT>
 void estimateDifferentialQuantities(const std::string& name, Context& context) {
     int nvert = int(context.asset.tree.samples().size());
     Eigen::VectorXd mean ( nvert ), kmin ( nvert ), kmax ( nvert );
@@ -78,7 +78,7 @@ void estimateDifferentialQuantities(const std::string& name, Context& context) {
             dmin.row( i ) = fit.kminDirection();
             dmax.row( i ) = fit.kmaxDirection();
             normal.row(i) = fit.primitiveGradient();
-            proj.row(i)   = fit.getNeighborFilter().evalPos() - context.asset.tree.points()[i].pos();
+            proj.row(i)   = fit.getNeighborFilter().frame().center() - context.asset.tree.points()[i].pos();
         }, context);
     });
 
@@ -108,7 +108,7 @@ void estimateDifferentialQuantitiesCNC(const std::string& name, Context& context
 
     measureTime( "[Ponca] Compute differential quantities using " + name,
                  [&mean, &kmin, &kmax, &dmin, &dmax, &context]() {
-        processPointCloudCNC<FitT>(context.computeOpts.NSize,
+        processPointCloudSinglePass<FitT>(context.computeOpts.NSize,
                                 [&mean, &kmin, &kmax, &dmin, &dmax]
                                 (const int i, const FitT& fit){
 
@@ -135,8 +135,8 @@ void estimateDifferentialQuantitiesCNC(const std::string& name, Context& context
 /// Dry run: loop over all vertices + run MLS loops without computation
 /// This function is useful to monitor the KdTree performances
 inline void mlsDryRun(Context& context) {
-    measureTime( "[Ponca] Dry run MLS ", [&context]() {
-        processPointCloudMLS<Context::Types::FitDry>( context.computeOpts.NSize, [](int, const Context::Types::FitDry&){ }, context);
+    measureTime( "[Ponca] Dry run", [&context]() {
+        processPointCloudSinglePass<Context::Types::FitDry>( context.computeOpts.NSize, [](int, const Context::Types::FitDry&){ }, context);
     });
 }
 
