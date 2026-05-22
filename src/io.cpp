@@ -74,7 +74,7 @@ bool loadPlyUsingHapply(const std::string& path, Context& context,
 
     if (plyIn.hasElement("face"))
     {
-        auto faceList = plyIn.getFaceIndices();
+        auto faceList = plyIn.getFaceIndices<int>();
         // we assume to have faces with the same size (otherwise the process stops)
         size_t nbFaces  = faceList.size();
         size_t faceSize =  faceList[0].size();
@@ -89,8 +89,8 @@ bool loadPlyUsingHapply(const std::string& path, Context& context,
                 break;
             }
 
-            using MapType = Eigen::Map<const Eigen::Matrix<unsigned long, Eigen::Dynamic, Eigen::Dynamic>>;
-            meshF.row(f) = MapType(faceList[f].data(), 1, faceSize).cast<int>();
+            using MapType = Eigen::Map<const Eigen::MatrixXi>;
+            meshF.row(f) = MapType(faceList[f].data(), 1, faceSize);
         }
 
         if (meshF.cols()==3) // we have a triangle mesh
