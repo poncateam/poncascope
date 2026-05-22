@@ -1,75 +1,170 @@
 #include "datastructures.hpp"
+
+#include "context.hpp"
 #include "imgui.h"
+#include "polyscope/curve_network.h"
 
 #include "polyscope/point_cloud.h"
 
 
+/// Generate a curve network for the selected point
+void generateLocalTopologyDisplay(Context& context, const std::string &name)
+{
+    std::vector<Context::Types::VectorType> vertices;
+    std::vector<std::array<size_t, 2>> edges;
+    std::vector<double> distances;
+
+    const Context::Types::VectorType q = context.asset.tree.points()[context.computeOpts.iVertexSource].pos();
+
+    vertices.push_back(q);
+    distances.push_back(0);
+
+    context.doOnNeighbors(context.computeOpts.iVertexSource, [&vertices,&context,&edges,&distances,&q](auto&& neighborhood){
+        for (int j : neighborhood){
+            edges.push_back({0,vertices.size()});
+            vertices.emplace_back(context.asset.tree.points()[j].pos());
+            distances.push_back((q-vertices.back()).norm());
+        }
+    });
+    polyscope::CurveNetwork* c = polyscope::registerCurveNetwork(name, vertices, edges);
+    c->addNodeScalarQuantity("Distances",distances);
+}
+
+/// Generate a curve network of the entire neighbor graph
+void generateFullTopologyDisplay(Context& context)
+{
+    std::vector<std::array<int, 2>> edges;
+    std::string name = context.dataStructureOptions.TopologyNames[context.dataStructureOptions.topoMode];
+
+    for (int i = 0; i != context.asset.tree.pointCount(); ++i)
+    {
+        context.doOnGraph([&edges,&i](auto& graph)
+        {
+            for (int j : graph->oneConnectedNeighbors(i))
+                edges.push_back({i,j});
+        });
+    }
+    polyscope::CurveNetwork* c = polyscope::registerCurveNetwork(name, context.asset.cloudV, edges);
+
+}
+
 /// Show in polyscope the euclidean neighborhood of the selected point (iVertexSource), with smooth weighting function
 void colorizeEuclideanNeighborhood(Context& context) {
-    int nvert = int(context.tree.samples().size());
+    int nvert = int(context.asset.tree.samples().size());
     Eigen::VectorXd closest ( nvert );
     closest.setZero();
 
-    Context::SmoothWeightFunc w(context.tree.points()[context.iVertexSource], context.NSize );
+    Context::Types::SmoothWeightFunc w(context.asset.tree.points()[context.computeOpts.iVertexSource], context.computeOpts.NSize );
 
-    closest(context.iVertexSource) = 2;
-    context.doOnRangeNeighbors(context.iVertexSource, [w, &closest, &context](auto &&neighborhood){
+    closest(context.computeOpts.iVertexSource) = 2;
+    context.doOnRangeNeighbors(context.computeOpts.iVertexSource, [w, &closest, &context](auto &&neighborhood){
         for (int j : neighborhood){
-            const auto &q = context.tree.points()[j];
+            const auto &q = context.asset.tree.points()[j];
             closest(j) = w( q ).first;
         }
     });
 
-    context.addScalarQuantity(  "range neighborhood", closest);
+    context.asset.addScalarQuantity(  "range neighborhood pts " + std::to_string(context.computeOpts.iVertexSource), closest);
+
+    generateLocalTopologyDisplay(context, "range links pts " + std::to_string(context.computeOpts.iVertexSource));
 }
 
 /// Show in polyscope the knn neighborhood of the selected point (iVertexSource)
 void colorizeKnn(Context& context) {
-    int nvert = int(context.tree.samples().size());
+    int nvert = int(context.asset.tree.samples().size());
     Eigen::VectorXd closest ( nvert );
     closest.setZero();
 
-    closest(context.iVertexSource) = 2;
-    context.doOnKNeighbors(context.iVertexSource, [&closest](auto&& neighborhood){
+    closest(context.computeOpts.iVertexSource) = 2;
+    context.doOnKNeighbors(context.computeOpts.iVertexSource, [&closest](auto&& neighborhood){
         for (int j : neighborhood){
             closest(j) = 1;
         }
     });
 
-    context.addScalarQuantity(  "knn neighborhood", closest);
+    context.asset.addScalarQuantity(  "knn neighborhood pts " + std::to_string(context.computeOpts.iVertexSource), closest);
+
+    generateLocalTopologyDisplay(context, "knn links pts " + std::to_string(context.computeOpts.iVertexSource));
 }
 
 /// Recompute K-Neighbor graph
-void recomputeKnnGraph(Context& context) {
-    measureTime("[Ponca] Build KnnGraph", [&context]() {
-        delete context.knnGraph;
-        context.knnGraph = new Context::KnnGraph(context.tree, context.kNNGraphK);
+void recomputeTopology(Context& context) {
+    measureTime("[Ponca] Build Graph", [&context]() {
+        // delete existing datastructures
+        delete context.asset.knnGraph;
+        delete context.asset.neiGraph;
+
+        context.asset.knnGraph = nullptr;
+        context.asset.neiGraph = nullptr;
+
+        switch (context.dataStructureOptions.topoMode)
+        {
+        case Context::DataStructureOptions::KnnGraph:
+            context.asset.knnGraph = new Context::Types::KnnGraph(context.asset.tree, context.dataStructureOptions.kNNGraphK);
+            break;
+        case Context::DataStructureOptions::NeighborGraph:
+            context.asset.neiGraph = new Context::Types::NeighborGraph(context.asset.tree, context.dataStructureOptions.neighborGraphRange);
+            break;
+        case Context::DataStructureOptions::MeshGraph:
+            context.asset.meshGraph = new Context::Types::MeshGraph(context.asset.tree, context.asset.meshF);
+            break;
+        case Context::DataStructureOptions::None:
+        case Context::DataStructureOptions::TopologyModeCount:
+        default:
+            ;
+        }
     });
+    if (context.dataStructureOptions.displayTopology) generateFullTopologyDisplay(context);
 }
 
 void callback_datastructures(Context& context)
 {
-    ImGui::SeparatorText("Acceleration Structure");
-    bool knnGraphUIChanged = ImGui::Checkbox("Use KnnGraph", &context.useKnnGraph);
-    if (context.useKnnGraph)
+    ImGui::SeparatorText("Topology");
+    int currentTopologyMode = context.dataStructureOptions.topoMode;
+    int nbModes = Context::DataStructureOptions::TopologyModeCount;
+
+    // Disable Mesh Graph (last mode) if faces have not been loaded
+    if (context.asset.meshF.cols() == 0) nbModes--;
+
+    if (ImGui::Combo("Restrict queries to topology", &currentTopologyMode,
+                Context::DataStructureOptions::TopologyNames,
+                      nbModes))
     {
-        ImGui::SameLine();
-        if (ImGui::InputInt("Graph k", &context.kNNGraphK) || knnGraphUIChanged) // recompute when activated or changed
-            recomputeKnnGraph(context);
+        if (currentTopologyMode != context.dataStructureOptions.topoMode)
+        {
+
+            context.dataStructureOptions.topoMode = Context::DataStructureOptions::TopologyMode(currentTopologyMode);
+            if (currentTopologyMode != Context::DataStructureOptions::TopologyMode::None) // recompute when activated
+                recomputeTopology(context);
+        }
     }
 
+    bool changed = false;
+    if (currentTopologyMode == Context::DataStructureOptions::TopologyMode::KnnGraph)
+        changed = ImGui::InputInt("k-neighborhood size", &context.dataStructureOptions.kNNGraphK);
+    else if (currentTopologyMode == Context::DataStructureOptions::TopologyMode::NeighborGraph)
+        changed = ImGui::InputFloat("k-neighborhood size", &context.dataStructureOptions.neighborGraphRange);
+
+    if (currentTopologyMode != Context::DataStructureOptions::TopologyMode::None)
+        if (ImGui::Checkbox("Display topology", &context.dataStructureOptions.displayTopology))
+        {
+            generateFullTopologyDisplay(context);
+        }
+
+    if (changed) recomputeTopology(context);
+
     ImGui::SeparatorText("Neighborhood queries");
-    ImGui::Checkbox("Use Range Queries", &context.useRangeNei);
+    ImGui::Checkbox("Use Range Queries", &context.computeOpts.useRangeNei);
     ImGui::SameLine();
-    if (context.useRangeNei)
-        ImGui::InputFloat("neighborhood range size", &context.NSize);
+    if (context.computeOpts.useRangeNei)
+        ImGui::InputFloat("neighborhood range size", &context.computeOpts.NSize);
     else
-        ImGui::InputInt("k-neighborhood size", &context.kNN);
+        ImGui::InputInt("k-neighborhood size", &context.computeOpts.kNN);
 
     ImGui::SeparatorText("Neighborhood display");
-    ImGui::InputInt("source vertex", &context.iVertexSource);
+    ImGui::InputInt("source vertex", &context.computeOpts.iVertexSource);
     ImGui::SameLine();
-    if (context.useRangeNei) {
+    if (context.computeOpts.useRangeNei) {
         if (ImGui::Button("show euclidean nei")) colorizeEuclideanNeighborhood(context);
     }
     else
