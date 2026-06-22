@@ -67,7 +67,7 @@ add_executable( poncascope
                 src/estimators.cpp
                 src/slicer.hpp
                 src/slicer.cpp
-                src/datastructures.cpp
+                src/datastructures.hpp
                 src/datastructures.cpp
                 src/io.hpp
                 src/io.cpp
