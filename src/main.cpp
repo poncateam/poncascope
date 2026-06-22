@@ -17,33 +17,29 @@ Context context;
 /// Define Polyscope callbacks
 void callback() {
 
-    ImGui::PushItemWidth(100);
 
-    if (ImGui::BeginTabBar("Controls")) {
-        if (ImGui::BeginTabItem("IO")) {
-            callback_io(context);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Datastructures")) {
-            callback_datastructures(context);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Differential estimation")) {
-            callback_estimators(context);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("Projection")) {
-            callback_projection(context);
-            ImGui::EndTabItem();
-        }
-        if (ImGui::BeginTabItem("2D sliced")) {
-            callback_slicer(context);
-            ImGui::EndTabItem();
-        }
-        ImGui::EndTabBar();
+    ImGui::PushItemWidth(100);
+    callback_datastructures(context);
+
+    if (ImGui::TreeNodeEx("IO")) {
+        callback_io(context);
+        ImGui::TreePop();
+    }
+    if (ImGui::TreeNodeEx("Differential estimation")) {
+        callback_estimators(context);
+        ImGui::TreePop();
+    }
+    if (ImGui::TreeNodeEx("Projection")) {
+        callback_projection(context);
+        ImGui::TreePop();
+    }
+    if (ImGui::TreeNodeEx("2D sliced")) {
+        callback_slicer(context);
+        ImGui::TreePop();
     }
 
     ImGui::PopItemWidth();
+
 }
 
 int main(int argc, char** argv) {
