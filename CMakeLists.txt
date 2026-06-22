@@ -69,6 +69,8 @@ add_executable( poncascope
                 src/slicer.cpp
                 src/datastructures.hpp
                 src/datastructures.cpp
+                src/projection.hpp
+                src/projection.cpp
                 src/io.hpp
                 src/io.cpp
                 src/main.cpp

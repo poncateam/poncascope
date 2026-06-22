@@ -5,10 +5,11 @@
 #include <utility>
 
 // This file defines all the main types + data shared across the application components
-#include "./context.hpp"
-#include "./io.hpp"
-#include "./estimators.hpp"
-#include "./slicer.hpp"
+#include "context.hpp"
+#include "io.hpp"
+#include "estimators.hpp"
+#include "slicer.hpp"
+#include "projection.hpp"
 #include "datastructures.hpp"
 
 Context context;
@@ -29,6 +30,10 @@ void callback() {
         }
         if (ImGui::BeginTabItem("Differential estimation")) {
             callback_estimators(context);
+            ImGui::EndTabItem();
+        }
+        if (ImGui::BeginTabItem("Projection")) {
+            callback_projection(context);
             ImGui::EndTabItem();
         }
         if (ImGui::BeginTabItem("2D sliced")) {
