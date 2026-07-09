@@ -111,19 +111,23 @@ void callback_slicer(Context& context)
     ImGui::RadioButton("X axis", &context.slicerOptions.axis, 0); ImGui::SameLine();
     ImGui::RadioButton("Y axis", &context.slicerOptions.axis, 1); ImGui::SameLine();
     ImGui::RadioButton("Z axis", &context.slicerOptions.axis, 2);
-    const char* items[] = { "ASO", "APSS", "PSS"};
+
+
+    auto filter = Context::Types::Factory::Filter<NotDerivativesProvider, ImplicitPrimitiveProvider>();
+    static auto names = filter.GetNames();
+
     static int item_current = 0;
-    ImGui::Combo("Fit function", &item_current, items, IM_ARRAYSIZE(items));
+    ImGui::Combo("Fit function", &item_current, names.data(), names.size());
 
     unsigned long size = context.slicerOptions.isHDSlicer?1024:256;
     if (ImGui::Button("Update"))
     {
-        switch(item_current)
+        filter.foreach([&](auto& x) 
         {
-        case 0: registerRegularSlicer("slicer", evalScalarField_impl<Context::Types::FitASO, true>   , size, context); break;
-        case 1: registerRegularSlicer("slicer", evalScalarField_impl<Context::Types::FitAPSS, true>  , size, context); break;
-        case 2: registerRegularSlicer("slicer", evalScalarField_impl<Context::Types::FitPlane, false>, size, context); break;
-        }
+            using FitType = std::remove_cv_t<decltype(x.object)>;
+            if (x.idx == item_current)
+                registerRegularSlicer("slicer", evalScalarField_impl<FitType, true>, size, context); 
+        });
     }
     ImGui::SameLine();
 }

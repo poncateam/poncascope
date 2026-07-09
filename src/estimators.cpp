@@ -102,25 +102,13 @@ void callback_estimators(Context& context)
     ImGui::InputInt("Nb Iterations", &context.computeOpts.mlsIter);
     ImGui::SameLine();
     ImGui::InputFloat("Epsilon", &context.computeOpts.mlsEpsilon);
-    if (ImGui::Button("Plane (PCA)")) // Compute curvature using Covariance Plane fitting
-        estimateDifferentialQuantities<Context::Types::FitPlaneDiff>("PSS",context);
-    ImGui::SameLine();
-    if (ImGui::Button("APSS")) // Compute curvature using APSS
-        estimateDifferentialQuantities<Context::Types::FitAPSSDiff>("APSS",context);
-    ImGui::SameLine();
-    if (ImGui::Button("ASO")) // Compute curvature using Algebraic Shape Operator
-        estimateDifferentialQuantities<Context::Types::FitASODiff>("ASO",context);
 
-    ImGui::Text("Corrected Normal Current estimator");
-    if (ImGui::Button("Uniform"))
-        estimateDifferentialQuantitiesCNC<Context::Types::FitCNCUniform>("CNC - Uniform",context);
-    ImGui::SameLine();
-    if (ImGui::Button("Independent"))
-        estimateDifferentialQuantitiesCNC<Context::Types::FitCNCIndep>("CNC - Independent",context);
-    ImGui::SameLine();
-    if (ImGui::Button("Hexagram"))
-        estimateDifferentialQuantitiesCNC<Context::Types::FitCNCHex>("CNC - Hexagram",context);
-    ImGui::SameLine();
-    if (ImGui::Button("AvgHexagram"))
-        estimateDifferentialQuantitiesCNC<Context::Types::FitCNCAvgHex>("CNC - AvgHexagram",context);
+    auto filter = Context::Types::Factory::Filter<NotDerivativesProvider, PrincipalCurvaturesProvider>();
+    filter.foreach([&](auto& x) {
+        using FitType = std::remove_cv_t<decltype(x.object)>;
+
+        if (ImGui::Button(x.name))
+            estimateDifferentialQuantities<FitType>(x.name, context);
+        ImGui::SameLine();
+    });
 }

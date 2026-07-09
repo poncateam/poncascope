@@ -10,6 +10,7 @@
 #include "polyscope/scalar_quantity.h"
 #include "polyscope/point_cloud.h"
 
+
 struct Context
 {
     struct Types {
@@ -23,7 +24,7 @@ struct Context
         using MeshGraph          = MeshNeighborGraph<PPAdapter>;
         using SmoothWeightFunc   = Ponca::DistWeightFilter<PPAdapter, Ponca::SmoothWeightKernel<Scalar> >;
 
-
+        using Factory = Ponca::Factory<PPAdapter, SmoothWeightFunc, Ponca::FitSpaceDer>;
         using FitDry = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::DryFit>;
 
         using FitPlane = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::CovariancePlaneFit>;
