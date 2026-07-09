@@ -1,5 +1,6 @@
 #pragma once
 
+#include <Ponca/Ponca>
 #include "./context.hpp"
 
 // Populate polyscope callback
