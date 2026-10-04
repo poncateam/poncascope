@@ -77,25 +77,28 @@ bool loadPlyUsingHapply(const std::string& path, Context& context,
         auto faceList = plyIn.getFaceIndices<int>();
         // we assume to have faces with the same size (otherwise the process stops)
         size_t nbFaces  = faceList.size();
-        size_t faceSize =  faceList[0].size();
-
-        meshF.resize(nbFaces, faceSize);
-
-        for (int f = 0; f != faceList.size(); ++ f)
+        if (nbFaces!=0)
         {
-            if (faceList[f].size() != faceSize)
+            size_t faceSize =  faceList[0].size();
+
+            meshF.resize(nbFaces, faceSize);
+
+            for (int f = 0; f != faceList.size(); ++ f)
             {
-                meshF = Eigen::MatrixXi();
-                break;
+                if (faceList[f].size() != faceSize)
+                {
+                    meshF = Eigen::MatrixXi();
+                    break;
+                }
+
+                using MapType = Eigen::Map<const Eigen::MatrixXi>;
+                meshF.row(f) = MapType(faceList[f].data(), 1, faceSize);
             }
 
-            using MapType = Eigen::Map<const Eigen::MatrixXi>;
-            meshF.row(f) = MapType(faceList[f].data(), 1, faceSize);
-        }
-
-        if (meshF.cols()==3) // we have a triangle mesh
-        {
-            igl::per_vertex_normals(coords, meshF, normals);
+            if (meshF.cols()==3) // we have a triangle mesh
+            {
+                igl::per_vertex_normals(coords, meshF, normals);
+            }
         }
     }
 
