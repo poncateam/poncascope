@@ -116,13 +116,34 @@ void callback_slicer(Context& context)
     ImGui::Combo("Fit function", &item_current, items, IM_ARRAYSIZE(items));
 
     unsigned long size = context.slicerOptions.isHDSlicer?1024:256;
-    if (ImGui::Button("Update"))
+    auto updateSlicer = [size,&context](int id)
     {
-        switch(item_current)
+        switch(id)
         {
         case 0: registerRegularSlicer("slicer", evalScalarField_impl<Context::Types::FitASO, true>   , size, context); break;
         case 1: registerRegularSlicer("slicer", evalScalarField_impl<Context::Types::FitAPSS, true>  , size, context); break;
         case 2: registerRegularSlicer("slicer", evalScalarField_impl<Context::Types::FitPlane, false>, size, context); break;
+        }
+    };
+
+    if (ImGui::Button("Update")) updateSlicer(item_current);
+    if (ImGui::Button("Shot animation"))
+    {
+        const int nbIter = 300;
+        // Set some options and save a named screenshot
+        polyscope::ScreenshotOptions opts;
+        opts.transparentBackground = true;
+
+        for (int i = 0; i != nbIter; ++i)
+        {
+            context.slicerOptions.slice = float(i) / float(nbIter);
+            updateSlicer(item_current);
+
+            std::ostringstream ss;
+            ss << std::setw(4) << std::setfill('0') << i;
+
+
+            polyscope::screenshot("./slicer"+ss.str()+".png", opts);
         }
     }
     ImGui::SameLine();
