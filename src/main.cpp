@@ -10,6 +10,7 @@
 #include "estimators.hpp"
 #include "slicer.hpp"
 #include "projection.hpp"
+#include "marchingCubes.hpp"
 #include "datastructures.hpp"
 
 Context context;
@@ -35,6 +36,10 @@ void callback() {
     }
     if (ImGui::TreeNodeEx("2D sliced")) {
         callback_slicer(context);
+        ImGui::TreePop();
+    }
+    if (ImGui::TreeNodeEx("MarchingCube")) {
+        callback_marchingcubes(context);
         ImGui::TreePop();
     }
 

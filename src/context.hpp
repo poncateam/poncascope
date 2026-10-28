@@ -139,6 +139,12 @@ struct Context
         std::string savePath = "";    /// < last path used in file loader
     } ioOptions;
 
+    struct MarchingCubesOptions
+    {
+        int N = 64;
+        bool displayCubes;
+    } marchingCubesOptions;
+
     //! \brief Dispatch a lambda on a range neighbors query over either the KnnGraph or the KdTree
     template <typename Functor>
     void doOnRangeNeighbors(const int i, const Functor& f) {

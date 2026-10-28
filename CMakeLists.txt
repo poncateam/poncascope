@@ -71,6 +71,8 @@ add_executable( poncascope
                 src/datastructures.cpp
                 src/projection.hpp
                 src/projection.cpp
+                src/marchingCubes.hpp
+                src/marchingCubes.cpp
                 src/io.hpp
                 src/io.cpp
                 src/main.cpp
