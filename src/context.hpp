@@ -10,6 +10,7 @@
 #include "polyscope/scalar_quantity.h"
 #include "polyscope/point_cloud.h"
 
+
 struct Context
 {
     struct Types {
@@ -23,37 +24,8 @@ struct Context
         using MeshGraph          = MeshNeighborGraph<PPAdapter>;
         using SmoothWeightFunc   = Ponca::DistWeightFilter<PPAdapter, Ponca::SmoothWeightKernel<Scalar> >;
 
-
+        using Factory = Ponca::Factory<PPAdapter, SmoothWeightFunc, Ponca::FitSpaceDer>;
         using FitDry = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::DryFit>;
-
-        using FitPlane = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::CovariancePlaneFit>;
-        using FitPlaneDiff = Ponca::BasketDiff<
-                FitPlane,
-                Ponca::DiffType::FitSpaceDer,
-                Ponca::CovariancePlaneDer,
-                Ponca::NormalDerivativeWeingartenEstimator,
-                Ponca::WeingartenCurvatureEstimatorDer>;
-
-        using FitAPSS = Ponca::Basket<PPAdapter, SmoothWeightFunc, Ponca::OrientedSphereFit>;
-        using FitAPSSDiff = Ponca::BasketDiff<
-                FitAPSS,
-                Ponca::DiffType::FitSpaceDer,
-                Ponca::OrientedSphereDer,
-                Ponca::NormalDerivativeWeingartenEstimator,
-                Ponca::WeingartenCurvatureEstimatorDer>;
-
-        using FitASO = FitAPSS;
-        using FitASODiff = Ponca::BasketDiff<
-                FitASO,
-                Ponca::DiffType::FitSpaceDer,
-                Ponca::OrientedSphereDer, Ponca::MlsSphereFitDer,
-                Ponca::NormalDerivativeWeingartenEstimator,
-                Ponca::WeingartenCurvatureEstimatorDer>;
-
-        using FitCNCUniform = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::UniformGeneration>;
-        using FitCNCIndep   = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::IndependentGeneration>;
-        using FitCNCHex     = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::HexagramGeneration>;
-        using FitCNCAvgHex  = Ponca::CNC<PPAdapter, Ponca::TriangleGenerationMethod::AvgHexagramGeneration>;
     };
 
     struct Asset {

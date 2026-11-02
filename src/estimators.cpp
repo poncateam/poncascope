@@ -29,7 +29,7 @@ void estimateDifferentialQuantities(const std::string& name, Context& context) {
             dmin.row( i ) = fit.kminDirection();
             dmax.row( i ) = fit.kmaxDirection();
             normal.row(i) = fit.primitiveGradient();
-            proj.row(i)   = fit.getNeighborFilter().frame().center() - context.asset.tree.points()[i].pos();
+            proj.row(i)   = fit.getNeighborFrame().center() - context.asset.tree.points()[i].pos();
         }, context);
     });
 
@@ -102,25 +102,16 @@ void callback_estimators(Context& context)
     ImGui::InputInt("Nb Iterations", &context.computeOpts.mlsIter);
     ImGui::SameLine();
     ImGui::InputFloat("Epsilon", &context.computeOpts.mlsEpsilon);
-    if (ImGui::Button("Plane (PCA)")) // Compute curvature using Covariance Plane fitting
-        estimateDifferentialQuantities<Context::Types::FitPlaneDiff>("PSS",context);
-    ImGui::SameLine();
-    if (ImGui::Button("APSS")) // Compute curvature using APSS
-        estimateDifferentialQuantities<Context::Types::FitAPSSDiff>("APSS",context);
-    ImGui::SameLine();
-    if (ImGui::Button("ASO")) // Compute curvature using Algebraic Shape Operator
-        estimateDifferentialQuantities<Context::Types::FitASODiff>("ASO",context);
 
-    ImGui::Text("Corrected Normal Current estimator");
-    if (ImGui::Button("Uniform"))
-        estimateDifferentialQuantitiesCNC<Context::Types::FitCNCUniform>("CNC - Uniform",context);
-    ImGui::SameLine();
-    if (ImGui::Button("Independent"))
-        estimateDifferentialQuantitiesCNC<Context::Types::FitCNCIndep>("CNC - Independent",context);
-    ImGui::SameLine();
-    if (ImGui::Button("Hexagram"))
-        estimateDifferentialQuantitiesCNC<Context::Types::FitCNCHex>("CNC - Hexagram",context);
-    ImGui::SameLine();
-    if (ImGui::Button("AvgHexagram"))
-        estimateDifferentialQuantitiesCNC<Context::Types::FitCNCAvgHex>("CNC - AvgHexagram",context);
+    auto filter = Context::Types::Factory::Filter<ImplicitPrimitiveProvider, PrincipalCurvaturesProvider>();
+    filter.foreach([&](auto& x) {
+        using FitType = std::remove_cv_t<decltype(x.object)>;
+
+        if (ImGui::Button(x.name))
+            estimateDifferentialQuantities<FitType>(x.name, context);
+        ImGui::SameLine();
+    });
+    
+    // Otherwise the subtree name overlapps the buttons. 
+    ImGui::NewLine();
 }

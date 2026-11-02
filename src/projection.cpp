@@ -63,30 +63,27 @@ void projectNeighborhood(Context& context, const std::string& name)
 
 void callback_projection(Context& context)
 {
+    static auto filter = Context::Types::Factory::Filter<NotDerivativesProvider, ProjectionOperatorProvider>();
+    static auto names = filter.GetNames();
+
     ImGui::SeparatorText("Projection type");
-    const char* items[] = { "PSS", "APSS"};
-    ImGui::Combo("Fit function", &currentProj, items, IM_ARRAYSIZE(items));
+    ImGui::Combo("Fit function", &currentProj, names.data(), names.size());
 
     ImGui::SeparatorText("Projection type");
     if (ImGui::Button("Project neighborhood on local primitive"))
     {
-        switch (currentProj)
-        {
-            case 0: projectNeighborhood<Context::Types::FitPlane>(context, items[0]) ; break;
-            case 1: projectNeighborhood<Context::Types::FitAPSS>(context, items[1]) ; break;
-            default: break;
-        };
+        filter.foreach([&](const auto& x) {
+            using FitType = std::remove_cv_t<decltype(x.object)>;
+            if (x.idx == currentProj)
+                projectNeighborhood<FitType>(context, x.name);
+        });
     }
     if (ImGui::Button("Project All"))
     {
-        switch (currentProj)
-        {
-        case 0: projectPointCloud<Context::Types::FitPlane>(context, items[0]) ; break;
-        case 1: projectPointCloud<Context::Types::FitAPSS>(context, items[1]) ; break;
-        default: break;
-        };
+        filter.foreach([&](const auto& x) {
+            using FitType = std::remove_cv_t<decltype(x.object)>;
+            if (x.idx == currentProj)
+                projectPointCloud<FitType>(context, x.name);
+        });
     }
-
-
 }
-
