@@ -102,11 +102,16 @@ void RunMarchingCubes(Context& context, const char* name)
         }
     }
 
-    Eigen::Matrix<Scalar, Eigen::Dynamic, 3> V;
-    Eigen::MatrixXi F;
-    igl::marching_cubes(Data, Grid, N, N, N, Scalar(0), V, F);
+    // Only emit geometry if the method is signed. The marching cube requires
+    // notion of interior which unsigned method can not provide
+    if (Fit{}.isSigned())
+    {
+        Eigen::Matrix<Scalar, Eigen::Dynamic, 3> V;
+        Eigen::MatrixXi F;
+        igl::marching_cubes(Data, Grid, N, N, N, Scalar(0), V, F);
 
-    polyscope::registerSurfaceMesh(name, V, F);
+        polyscope::registerSurfaceMesh(name, V, F);
+    }
 
     // Shift the lower point so that evaluation are at the center of each cube
     const glm::vec3 pstep  = glm::vec3(step.x(), step.y(), step.z());
