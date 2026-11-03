@@ -150,5 +150,4 @@ void callback_slicer(Context& context)
             polyscope::screenshot("./slicer"+ss.str()+".png", opts);
         }
     }
-    ImGui::SameLine();
 }
