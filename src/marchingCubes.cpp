@@ -53,7 +53,7 @@ void RunMarchingCubes(Context& context, const char* name)
 
         // Compute potentials and stable-ness
         #pragma omp for schedule(static)
-        for (size_t i = 0; i < N * N * N; ++i)
+        for (int i = 0; i < N * N * N; ++i)
         {
             const size_t x = i % N;
             const size_t y = (i / N) % N;
@@ -80,7 +80,7 @@ void RunMarchingCubes(Context& context, const char* name)
         #pragma omp barrier
         #pragma omp single
         {
-            for (size_t i = 1; i < offsets.size(); ++i)
+            for (int i = 1; i < offsets.size(); ++i)
                 offsets[i] += offsets[i - 1];
                 
             cells.resize(offsets.back());
@@ -90,7 +90,7 @@ void RunMarchingCubes(Context& context, const char* name)
         size_t pos = offsets[tid];
 
         #pragma omp for schedule(static)
-        for (size_t i = 0; i < N * N * N; ++i)
+        for (int i = 0; i < N * N * N; ++i)
         {
             if (!Stables(i))
                 continue;
