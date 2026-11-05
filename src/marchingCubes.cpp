@@ -31,28 +31,43 @@ void RunMarchingCubes(Context& context, const char* name)
     const VectorType upper = max + VectorType::Constant(t);
     const VectorType step  = (upper - lower) / Scalar(N - 1);
 
+    // In the following: cube refers to data for the marching cube and cells for polyscope grid
+
     // Data formats expected by igl
-    Eigen::Matrix<Scalar , Eigen::Dynamic, 3> Grid(N * N * N, 3);
-    Eigen::Matrix<Scalar , Eigen::Dynamic, 1> Data(N * N * N);
-    Eigen::Matrix<uint8_t, Eigen::Dynamic, 1> Stables(N * N * N);
-    
-    // Vector for dynamically sized data
-    std::vector<size_t> offsets;
+    Eigen::Matrix<Scalar , Eigen::Dynamic, 3> cubeGrid(N * N * N, 3);
+    Eigen::Matrix<Scalar , Eigen::Dynamic, 1> cubeData(N * N * N);
+    Eigen::Matrix<uint8_t, Eigen::Dynamic, 1> cubeStables(N * N * N);
+    Eigen::Matrix<size_t , Eigen::Dynamic, 8> cubeIndices;
+
+    // Shift in indices for for cube grids, in igl order 
+    const size_t iglCubeIndicesOffsets[8] = {
+        0, 1, 1 + N, N,
+        N * N, 1 + N * N, 1 + N + N * N, N + N * N 
+    };
 
     // Data format for polyscope
     std::vector<glm::ivec3> cells;
-    std::vector<Scalar> values;
+    std::vector<Scalar> cellValues;
+
+    // Offset within threads
+    std::vector<size_t> cellOffsets;
+    std::vector<size_t> cubeOffsets;
+
 
     #pragma omp parallel
     {        
         #pragma omp single
-        offsets.assign(omp_get_num_threads() + 1, 0);
-
+        {
+            cellOffsets.assign(omp_get_num_threads() + 1, 0);
+            cubeOffsets.assign(omp_get_num_threads() + 1, 0);
+        }
+        
         const int tid = omp_get_thread_num();
-        size_t count = 0;
+        size_t cellCount = 0;
+        size_t cubeCount = 0;
 
         // Compute potentials and stable-ness
-        #pragma omp for schedule(static)
+        #pragma omp for schedule(dynamic)
         for (int i = 0; i < N * N * N; ++i)
         {
             const size_t x = i % N;
@@ -60,65 +75,109 @@ void RunMarchingCubes(Context& context, const char* name)
             const size_t z = i / (N * N);
 
             const VectorType p = lower + step.cwiseProduct(VectorType(x, y, z));
-            Grid.row(i) = p.transpose();
+            cubeGrid.row(i) = p.transpose();
 
             Fit fit;
             fit.init();
             fit.setNeighborFilter({p, t});
             fit.computeWithIds(context.asset.tree.rangeNeighbors(p, t), context.asset.tree.points());
 
-            Stables(i) = fit.isStable();
+            cubeStables(i) = fit.isStable();
 
-            Data(i) = Stables(i) ? fit.potential(p) : 0;
-            Data(i) = fit.isSigned() ? Data(i) : std::abs(Data(i));
+            cubeData(i) = cubeStables(i) ? fit.potential(p) : (fit.isSigned() ? std::numeric_limits<Scalar>::max() : 0);
             
-            count += Stables(i);
+            if (context.marchingCubesOptions.keepSign)
+                cubeData(i) = std::abs(cubeData(i));
         }
-        
-        offsets[tid + 1] = count;
-
-        #pragma omp barrier
-        #pragma omp single
-        {
-            for (int i = 1; i < offsets.size(); ++i)
-                offsets[i] += offsets[i - 1];
-                
-            cells.resize(offsets.back());
-            values.resize(offsets.back());
-        }
-
-        size_t pos = offsets[tid];
 
         #pragma omp for schedule(static)
         for (int i = 0; i < N * N * N; ++i)
         {
-            if (!Stables(i))
+            const size_t x = i % N;
+            const size_t y = (i / N) % N;
+            const size_t z = i / (N * N);
+
+            cellCount += cubeStables(i);
+
+            bool ok = cubeStables(i) && x < M && y < M && z < M;
+            for (int j = 1; j < 8 && ok; ++j)
+                ok = cubeStables(i + iglCubeIndicesOffsets[j]);
+
+            if (ok)
+                cubeCount ++;
+        }
+
+        cellOffsets[tid + 1] = cellCount;
+        cubeOffsets[tid + 1] = cubeCount;
+
+        #pragma omp barrier
+        #pragma omp single
+        {
+            for (int i = 1; i < cellOffsets.size(); ++i)
+            {
+                cellOffsets[i] += cellOffsets[i - 1];
+                cubeOffsets[i] += cubeOffsets[i - 1];
+            }
+
+            cells.resize(cellOffsets.back());
+            cellValues.resize(cellOffsets.back());
+            cubeIndices.resize(cubeOffsets.back(), 8);
+        }
+
+        size_t cellPos = cellOffsets[tid];
+        size_t cubePos = cubeOffsets[tid];
+
+        #pragma omp for schedule(static)
+        for (int i = 0; i < N * N * N; ++i)
+        {
+            if (!cubeStables(i))
                 continue;
 
-            cells[pos]  = glm::ivec3(i % N, (i / N) % N, i / (N * N));
-            values[pos] = Data(i);
+            const size_t x = i % N;
+            const size_t y = (i / N) % N;
+            const size_t z = i / (N * N);
 
-            pos++;
+            cells[cellPos] = glm::ivec3(x, y, z);
+            cellValues[cellPos] = cubeData(i);
+            cellPos++;
+
+            // We would cache this results, but this is quite a cheap loop
+            // and at some point we should stop allocating memory :) 
+            bool ok = x < M && y < M && z < M;
+            for (int j = 1; j < 8 && ok; ++j)
+                ok = cubeStables(i + iglCubeIndicesOffsets[j]);
+
+            if (!ok)
+                continue;
+
+            for (int j = 0; j < 8; ++j)
+                cubeIndices(cubePos, j) = i + iglCubeIndicesOffsets[j];
+
+            cubePos++;
         }
     }
 
     // Only emit geometry if the method is signed. The marching cube requires
     // notion of interior which unsigned method can not provide
-    if (Fit{}.isSigned())
+    if (context.marchingCubesOptions.displayMesh)
     {
         Eigen::Matrix<Scalar, Eigen::Dynamic, 3> V;
         Eigen::MatrixXi F;
-        igl::marching_cubes(Data, Grid, N, N, N, Scalar(0), V, F);
+        igl::marching_cubes(cubeData, cubeGrid, cubeIndices, Scalar(0), V, F);
 
         polyscope::registerSurfaceMesh(name, V, F);
     }
 
-    // Shift the lower point so that evaluation are at the center of each cube
-    const glm::vec3 pstep  = glm::vec3(step.x(), step.y(), step.z());
-    const glm::vec3 plower = glm::vec3(lower.x(), lower.y(), lower.z()) - 0.5f * pstep;
+    if (context.marchingCubesOptions.displayCube)
+    {
+        // Shift the lower point so that evaluation are at the center of each cube
+        const glm::vec3 pstep  = glm::vec3(step.x(), step.y(), step.z());
+        const glm::vec3 plower = glm::vec3(lower.x(), lower.y(), lower.z()) - 0.5f * pstep;
 
-    auto* grid = polyscope::registerSparseVolumeGrid(std::string(name) + "_grid", plower, pstep, cells);
-    grid->addCellScalarQuantity("potential", values, polyscope::DataType::SYMMETRIC)->setEnabled(true);
+        auto* grid = polyscope::registerSparseVolumeGrid(std::string(name) + "_grid", plower, pstep, cells);
+        grid->addCellScalarQuantity("potential", cellValues, polyscope::DataType::SYMMETRIC)->setEnabled(true);
+    }
+    
 }
 
 void callback_marchingcubes(Context& context)
@@ -134,6 +193,10 @@ void callback_marchingcubes(Context& context)
 
     if (ImGui::InputInt("Grid size", &context.marchingCubesOptions.N))
         context.marchingCubesOptions.N = std::clamp(context.marchingCubesOptions.N, 3, 1024);
+
+    ImGui::Checkbox("Keep sign", &context.marchingCubesOptions.keepSign);
+    ImGui::Checkbox("Display mesh", &context.marchingCubesOptions.displayMesh);    
+    ImGui::Checkbox("Display cubes", &context.marchingCubesOptions.displayCube);
 
     if (ImGui::Button("Run marching cubes"))
     {

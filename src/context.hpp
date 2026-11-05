@@ -142,7 +142,9 @@ struct Context
     struct MarchingCubesOptions
     {
         int N = 64;
-        bool displayCubes;
+        bool keepSign = true;
+        bool displayMesh = true;
+        bool displayCube = true;
     } marchingCubesOptions;
 
     //! \brief Dispatch a lambda on a range neighbors query over either the KnnGraph or the KdTree
