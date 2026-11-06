@@ -142,7 +142,7 @@ struct Context
     struct MarchingCubesOptions
     {
         int N = 64;
-        bool keepSign = true;
+        bool absoluteValue = false;
         bool displayMesh = true;
         bool displayCube = true;
     } marchingCubesOptions;

@@ -90,7 +90,7 @@ void RunMarchingCubes(Context& context, const char* name)
             cubeStables(i) = fit.isStable();
             cubeData(i) = cubeStables(i) ? fit.potential(p) : (fit.isSigned() ? std::numeric_limits<Scalar>::max() : 0);
             
-            if (context.marchingCubesOptions.keepSign)
+            if (context.marchingCubesOptions.absoluteValue)
                 cubeData(i) = std::abs(cubeData(i));
         }
 
@@ -199,7 +199,7 @@ void callback_marchingcubes(Context& context)
     if (ImGui::InputInt("Grid size", &context.marchingCubesOptions.N))
         context.marchingCubesOptions.N = std::clamp(context.marchingCubesOptions.N, 3, 1024);
 
-    ImGui::Checkbox("Keep sign", &context.marchingCubesOptions.keepSign);
+    ImGui::Checkbox("Absolute value", &context.marchingCubesOptions.absoluteValue);
     ImGui::Checkbox("Display mesh", &context.marchingCubesOptions.displayMesh);    
     ImGui::Checkbox("Display cubes", &context.marchingCubesOptions.displayCube);
 
