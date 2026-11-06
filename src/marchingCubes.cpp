@@ -82,8 +82,12 @@ void RunMarchingCubes(Context& context, const char* name)
             fit.setNeighborFilter({p, t});
             fit.computeWithIds(context.asset.tree.rangeNeighbors(p, t), context.asset.tree.points());
 
+            if constexpr (Ponca::ProvidesAlgebraicSphere<Fit>)
+            {
+                bool ignored = fit.applyPrattNorm();
+            }
+                
             cubeStables(i) = fit.isStable();
-
             cubeData(i) = cubeStables(i) ? fit.potential(p) : (fit.isSigned() ? std::numeric_limits<Scalar>::max() : 0);
             
             if (context.marchingCubesOptions.keepSign)
@@ -159,13 +163,14 @@ void RunMarchingCubes(Context& context, const char* name)
 
     // Only emit geometry if the method is signed. The marching cube requires
     // notion of interior which unsigned method can not provide
-    if (context.marchingCubesOptions.displayMesh)
+    if (context.marchingCubesOptions.displayMesh && Fit{}.isSigned())
     {
         Eigen::Matrix<Scalar, Eigen::Dynamic, 3> V;
         Eigen::MatrixXi F;
         igl::marching_cubes(cubeData, cubeGrid, cubeIndices, Scalar(0), V, F);
 
-        polyscope::registerSurfaceMesh(name, V, F);
+        if (V.rows() != 0)
+            polyscope::registerSurfaceMesh(name, V, F);
     }
 
     if (context.marchingCubesOptions.displayCube)
